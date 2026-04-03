@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE hibernate-configuration PUBLIC
+        "-//Hibernate/Hibernate Configuration DTD 3.0//EN"
+        "http://www.hibernate.org/dtd/hibernate-configuration-3.0.dtd">
+
+<hibernate-configuration>
+    <session-factory>
+        <property name="connection.driver_class">org.mariadb.jdbc.Driver</property>
+        <property name="connection.url">jdbc:mariadb://localhost:3306/univ_scheduler_db</property>
+        <property name="connection.username">root</property>
+        <property name="connection.password"></property>
+
+        <property name="hibernate.dialect">org.hibernate.dialect.MariaDBDialect</property>
+        <property name="hibernate.show_sql">true</property>
+        <property name="hibernate.format_sql">true</property>
+        <property name="hibernate.hbm2ddl.auto">update</property>
+
+        <mapping class="ProjetUniv_scheduler.Batiment"/>
+        <mapping class="ProjetUniv_scheduler.Departement"/>
+        <mapping class="ProjetUniv_scheduler.Filiere"/>
+        <mapping class="ProjetUniv_scheduler.Cours"/>
+        <mapping class="ProjetUniv_scheduler.Creneau"/>
+        <mapping class="ProjetUniv_scheduler.Salle"/>
+        <mapping class="ProjetUniv_scheduler.Equipement"/>
+        <mapping class="ProjetUniv_scheduler.Statistique"/>
+        <mapping class="ProjetUniv_scheduler.Promotion"/>
+        <mapping class="ProjetUniv_scheduler.Groupe"/>
+        <mapping class="ProjetUniv_scheduler.Utilisateur"/>
+        <mapping class="ProjetUniv_scheduler.Enseignant"/>
+        <mapping class="ProjetUniv_scheduler.Etudiant"/>
+        <mapping class="ProjetUniv_scheduler.Gestionnaire"/>      
+        <mapping class="ProjetUniv_scheduler.Administrateur"/>   
+        <mapping class="ProjetUniv_scheduler.Reservation"/>   
+        <mapping class="ProjetUniv_scheduler.UFR"/> 
+        <mapping class="ProjetUniv_scheduler.Incident"/>
+        <mapping class="ProjetUniv_scheduler.Notification"/>
+    </session-factory>
+</hibernate-configuration>

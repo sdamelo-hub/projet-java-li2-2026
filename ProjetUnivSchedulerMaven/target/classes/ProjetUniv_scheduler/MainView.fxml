@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml" 
+            fx:controller="ProjetUniv_scheduler.MainController"
+            prefHeight="700.0" prefWidth="1100.0"
+            style="-fx-background-color: #FFFFFF;"> <left>
+        <VBox spacing="12" style="-fx-background-color: #1E2732; -fx-min-width: 240; -fx-padding: 25;">
+            <Label text="UNIV-SCHEDULER" 
+                   style="-fx-text-fill: #A3FF33; -fx-font-size: 20; -fx-font-weight: bold; -fx-padding: 0 0 20 0;"/>
+            
+            <Separator style="-fx-opacity: 0.4; -fx-padding: 0 0 10 0; -fx-background-color: #A3FF33;"/>
+            
+            <Button text="🏠  Tableau de bord" onAction="#showDashboard" 
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33; -fx-alignment: CENTER_LEFT; -fx-cursor: hand; -fx-font-size: 14; -fx-font-weight: bold;" 
+                    maxWidth="Infinity" prefHeight="45"/>
+                    
+            <Button text="🏫  Gestion des Salles" onAction="#showSalles" 
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33; -fx-alignment: CENTER_LEFT; -fx-cursor: hand; -fx-font-size: 14; -fx-font-weight: bold;" 
+                    maxWidth="Infinity" prefHeight="45"/>
+                    
+            <Button text="📅  Réservations" onAction="#showReservations" 
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33; -fx-alignment: CENTER_LEFT; -fx-cursor: hand; -fx-font-size: 14; -fx-font-weight: bold;" 
+                    maxWidth="Infinity" prefHeight="45"/>
+                    
+            <Button text="🔔  Notifications" onAction="#showNotifications" 
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33; -fx-alignment: CENTER_LEFT; -fx-cursor: hand; -fx-font-size: 14; -fx-font-weight: bold;" 
+                    maxWidth="Infinity" prefHeight="45"/>
+                    
+            <Region VBox.vgrow="ALWAYS" /> 
+            
+            <Label text="© 2026 UIDT Cyber-System" 
+                   style="-fx-text-fill: #A3FF33; -fx-font-size: 10; -fx-opacity: 0.7;"/>
+        </VBox>
+    </left>
+    
+    <center>
+        <ScrollPane fitToWidth="true" style="-fx-background-color: transparent; -fx-background: #FFFFFF; -fx-border-color: transparent;">
+            <VBox fx:id="mainContent" spacing="25" style="-fx-background-color: #FFFFFF;">
+                <padding>
+                    <Insets top="40" right="40" bottom="40" left="40"/>
+                </padding>
+                
+                <Label text="Bienvenue sur le système de gestion de l'UIDT" 
+                       style="-fx-font-size: 26; -fx-font-weight: bold; -fx-text-fill: #1E2732;"/>
+                
+                <FlowPane fx:id="containerSalles" hgap="25" vgap="25">
+                    </FlowPane>
+            </VBox>
+        </ScrollPane>
+    </center>
+</BorderPane>
