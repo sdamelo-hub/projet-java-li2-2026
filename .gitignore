@@ -1,0 +1,15 @@
+# Fichiers de compilation
+*.class
+target/
+
+# Configuration Eclipse & IDE
+.metadata/
+.settings/
+.project
+.classpath
+*.iml
+.idea/
+
+# OS
+Thumbs.db
+Desktop.ini
