@@ -44,6 +44,6 @@ public class Administrateur extends Utilisateur {
     }
 
     public void definirTypeEquipement() {
-        // Définition des nouvelles catégories de matériel disponibles
+        // Définition
     }
 }
