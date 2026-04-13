@@ -25,6 +25,10 @@
             <Button text="📅  Réservations" onAction="#showReservations" 
                     style="-fx-background-color: transparent; -fx-text-fill: #A3FF33; -fx-alignment: CENTER_LEFT; -fx-cursor: hand; -fx-font-size: 14; -fx-font-weight: bold;" 
                     maxWidth="Infinity" prefHeight="45"/>
+            
+            <Button text="🛠️  Administration" onAction="#showAdminPanel" 
+			        style="-fx-background-color: transparent; -fx-text-fill: #A3FF33; -fx-alignment: CENTER_LEFT; -fx-cursor: hand; -fx-font-size: 14; -fx-font-weight: bold;" 
+			        maxWidth="Infinity" prefHeight="45"/>
                     
             <Button text="🔔  Notifications" onAction="#showNotifications" 
                     style="-fx-background-color: transparent; -fx-text-fill: #A3FF33; -fx-alignment: CENTER_LEFT; -fx-cursor: hand; -fx-font-size: 14; -fx-font-weight: bold;" 

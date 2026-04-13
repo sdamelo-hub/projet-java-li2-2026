@@ -5,33 +5,40 @@ import jakarta.persistence.*;
 @Entity
 @Table(name = "utilisateurs")
 @Inheritance(strategy = InheritanceType.JOINED)
-public abstract class Utilisateur {
+public class Utilisateur { // Retrait de "abstract" pour permettre l'instanciation
     
     @Id
-    private String identifiantConnexion;
+    private String identifiantConnexion; // Peut servir de matricule ou d'identifiant unique
     
     private String nom;
     private String prenom;
     private String email;
     private String motDePasse;
+    private String role; // Ajout du champ role (Administrateur, Enseignant, etc.)
 
     // Constructeur par défaut indispensable pour Hibernate
     public Utilisateur() {
     }
 
-    public Utilisateur(String identifiantConnexion, String motDePasse) {
-        this.identifiantConnexion = identifiantConnexion;
-        this.motDePasse = motDePasse;
+    // Constructeur simplifié pour la création rapide (ex: dans showAddUserDialog)
+    public Utilisateur(String nom, String email, String role) {
+        this.nom = nom;
+        this.email = email;
+        this.role = role;
+        // On peut mettre l'email comme identifiant par défaut si non précisé
+        this.identifiantConnexion = email; 
     }
 
-    public Utilisateur(String nom, String prenom, String identifiantConnexion, String email, String motDePasse) {
+    public Utilisateur(String nom, String prenom, String identifiantConnexion, String email, String motDePasse, String role) {
         this.nom = nom;
         this.prenom = prenom;
         this.identifiantConnexion = identifiantConnexion;
         this.email = email;
         this.motDePasse = motDePasse;
+        this.role = role;
     }
    
+    // --- MÉTHODES MÉTIER ---
     public boolean seConnecter() {
         return true; 
     }
@@ -40,6 +47,7 @@ public abstract class Utilisateur {
         return true;
     }
 
+    // --- GETTERS ET SETTERS ---
     public String getNom() { return nom; }
     public void setNom(String nom) { this.nom = nom; }
 
@@ -54,4 +62,7 @@ public abstract class Utilisateur {
 
     public String getMotDePasse() { return motDePasse; }
     public void setMotDePasse(String motDePasse) { this.motDePasse = motDePasse; }
+
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
 }

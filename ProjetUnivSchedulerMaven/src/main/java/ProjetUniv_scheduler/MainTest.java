@@ -36,7 +36,8 @@ public class MainTest {
 
             // 1. On crée le nouveau bâtiment
             // Ordre : nomBatiment, localisationBatiment, nbEtage, codeBatiment, typeBatiment
-            Batiment batB = new Batiment("Faculte des Lettres", "Sud du Campus", 3, "B", "Enseignement");
+         // L'ordre doit être : Code, Nom, Localisation, Etages, Type
+            Batiment batB = new Batiment("B", "Faculte des Lettres", "Sud du Campus", 3, "Enseignement");
             
             // 2. On crée la nouvelle salle
             // Ordre : numeroSalle, capacite, categorieSalle, etatSalle
