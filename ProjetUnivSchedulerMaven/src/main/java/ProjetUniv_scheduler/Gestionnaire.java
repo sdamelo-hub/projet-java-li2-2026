@@ -3,57 +3,36 @@ package ProjetUniv_scheduler;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "gestionnaires")
-@PrimaryKeyJoinColumn(name = "identifiantConnexion")
+@DiscriminatorValue("Gestionnaire")
 public class Gestionnaire extends Utilisateur {
-    
+
+    @Column(name = "idGestionnaire")
     private int idGestionnaire;
+
+    @Column(name = "responsabilite")
     private String responsabilite;
 
-    // Constructeur par défaut indispensable pour Hibernate
-    public Gestionnaire() {
-        super();
-    }
+    public Gestionnaire() { super(); }
 
-    public Gestionnaire(String identifiantConnexion, String motDePass, int idGestionnaire, String responsabilite) {
-        super(identifiantConnexion, motDePass);
+    public Gestionnaire(String identifiantConnexion, String motDePasse,
+                        int idGestionnaire, String responsabilite) {
+        super(identifiantConnexion, motDePasse);
         this.idGestionnaire = idGestionnaire;
         this.responsabilite = responsabilite;
     }
 
-    public void genererEmploiTemps() {
-        // Logique pour compiler les réservations validées en un planning global
-    }
-
+    public void genererEmploiTemps() {}
     public void validerReservation(Reservation reservation) {
-        if (reservation != null) {
-            reservation.validerReservation();
-        }
+        if (reservation != null) reservation.validerReservation();
     }
-
-    public void creerCours() {
-        // Logique pour instancier un nouvel objet Cours
-    }
-
-    public void modifierCours() {
-        // Logique de mise à jour
-    }
-
-    public void supprimerCours() {
-        // Logique de retrait
-    }
-
-    public void assignerSalle() {
-        // Logique de liaison
-    }
-
-    public void resoudreConflits() {
-        // Algorithme d'arbitrage
-    }
+    public void creerCours() {}
+    public void modifierCours() {}
+    public void supprimerCours() {}
+    public void assignerSalle() {}
+    public void resoudreConflits() {}
 
     public int getIdGestionnaire() { return idGestionnaire; }
-    public void setIdGestionnaire(int idGestionnaire) { this.idGestionnaire = idGestionnaire; }
-
+    public void setIdGestionnaire(int v) { this.idGestionnaire = v; }
     public String getResponsabilite() { return responsabilite; }
-    public void setResponsabilite(String responsabilite) { this.responsabilite = responsabilite; }
-}	
+    public void setResponsabilite(String v) { this.responsabilite = v; }
+}

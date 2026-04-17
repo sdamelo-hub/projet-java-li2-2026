@@ -13,7 +13,22 @@
         <property name="hibernate.dialect">org.hibernate.dialect.MariaDBDialect</property>
         <property name="hibernate.show_sql">true</property>
         <property name="hibernate.format_sql">true</property>
-        <property name="hibernate.hbm2ddl.auto">update</property>
+        <!-- CORRECTIF : "validate" plutôt que "update" en production pour éviter
+             les modifications accidentelles du schéma. Repasser à "update" en dev. -->
+        <property name="hibernate.hbm2ddl.auto">validate</property>
+
+        <!--
+            CORRECTIF : Les sous-classes (Enseignant, Etudiant, Gestionnaire, Administrateur)
+            utilisent la stratégie SINGLE_TABLE. Elles partagent la table "utilisateurs".
+            On NE mappe plus leurs anciennes tables séparées (enseignants, etudiants, etc.)
+            car elles ne sont plus utilisées pour l'héritage Hibernate.
+            On garde les mappings des entités indépendantes.
+        -->
+        <mapping class="ProjetUniv_scheduler.Utilisateur"/>
+        <mapping class="ProjetUniv_scheduler.Administrateur"/>
+        <mapping class="ProjetUniv_scheduler.Gestionnaire"/>
+        <mapping class="ProjetUniv_scheduler.Enseignant"/>
+        <mapping class="ProjetUniv_scheduler.Etudiant"/>
 
         <mapping class="ProjetUniv_scheduler.Batiment"/>
         <mapping class="ProjetUniv_scheduler.Departement"/>
@@ -25,13 +40,8 @@
         <mapping class="ProjetUniv_scheduler.Statistique"/>
         <mapping class="ProjetUniv_scheduler.Promotion"/>
         <mapping class="ProjetUniv_scheduler.Groupe"/>
-        <mapping class="ProjetUniv_scheduler.Utilisateur"/>
-        <mapping class="ProjetUniv_scheduler.Enseignant"/>
-        <mapping class="ProjetUniv_scheduler.Etudiant"/>
-        <mapping class="ProjetUniv_scheduler.Gestionnaire"/>      
-        <mapping class="ProjetUniv_scheduler.Administrateur"/>   
-        <mapping class="ProjetUniv_scheduler.Reservation"/>   
-        <mapping class="ProjetUniv_scheduler.UFR"/> 
+        <mapping class="ProjetUniv_scheduler.Reservation"/>
+        <mapping class="ProjetUniv_scheduler.UFR"/>
         <mapping class="ProjetUniv_scheduler.Incident"/>
         <mapping class="ProjetUniv_scheduler.Notification"/>
     </session-factory>

@@ -3,66 +3,73 @@ package ProjetUniv_scheduler;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "utilisateurs")
-@Inheritance(strategy = InheritanceType.JOINED)
-public class Utilisateur { // Retrait de "abstract" pour permettre l'instanciation
-    
+@Table(name = "utilisateurs") // Indique que tout le monde va ici
+@Inheritance(strategy = InheritanceType.SINGLE_TABLE)
+@DiscriminatorColumn(name = "DTYPE")
+public class Utilisateur {
+
     @Id
-    private String identifiantConnexion; // Peut servir de matricule ou d'identifiant unique
-    
+    @Column(name = "identifiantConnexion", nullable = false)
+    private String identifiantConnexion;
+
+    @Column(name = "nom")
     private String nom;
+
+    @Column(name = "prenom")
     private String prenom;
+
+    @Column(name = "email")
     private String email;
+
+    @Column(name = "role")
+    private String role;
+
+    @Column(name = "motDePasse")
     private String motDePasse;
-    private String role; // Ajout du champ role (Administrateur, Enseignant, etc.)
 
-    // Constructeur par défaut indispensable pour Hibernate
-    public Utilisateur() {
-    }
+    // ── Constructeur Hibernate (obligatoire) ──────────────────────────────────
+    public Utilisateur() {}
 
-    // Constructeur simplifié pour la création rapide (ex: dans showAddUserDialog)
-    public Utilisateur(String nom, String email, String role) {
-        this.nom = nom;
-        this.email = email;
-        this.role = role;
-        // On peut mettre l'email comme identifiant par défaut si non précisé
-        this.identifiantConnexion = email; 
-    }
-
-    public Utilisateur(String nom, String prenom, String identifiantConnexion, String email, String motDePasse, String role) {
-        this.nom = nom;
-        this.prenom = prenom;
+    // ── Constructeur appelé par Enseignant, Etudiant, Administrateur, Gestionnaire
+    //    via super(identifiantConnexion, motDePasse) ──────────────────────────
+    public Utilisateur(String identifiantConnexion, String motDePasse) {
         this.identifiantConnexion = identifiantConnexion;
-        this.email = email;
-        this.motDePasse = motDePasse;
-        this.role = role;
-    }
-   
-    // --- MÉTHODES MÉTIER ---
-    public boolean seConnecter() {
-        return true; 
+        this.motDePasse           = motDePasse;
     }
 
-    public boolean seDeconnecter() {
-        return true;
+    // ── Constructeur complet pour créations depuis l'UI admin ─────────────────
+    public Utilisateur(String nom, String prenom, String email, String role,
+                       String identifiantConnexion, String motDePasse) {
+        this.nom                  = nom;
+        this.prenom               = prenom;
+        this.email                = email;
+        this.role                 = role;
+        this.identifiantConnexion = identifiantConnexion;
+        this.motDePasse           = motDePasse;
     }
 
-    // --- GETTERS ET SETTERS ---
-    public String getNom() { return nom; }
-    public void setNom(String nom) { this.nom = nom; }
+    // ── Getters & Setters ─────────────────────────────────────────────────────
+    public String getIdentifiantConnexion()         { return identifiantConnexion; }
+    public void   setIdentifiantConnexion(String v) { this.identifiantConnexion = v; }
 
-    public String getPrenom() { return prenom; }
-    public void setPrenom(String prenom) { this.prenom = prenom; }
+    public String getNom()                          { return nom; }
+    public void   setNom(String v)                  { this.nom = v; }
 
-    public String getIdentifiantConnexion() { return identifiantConnexion; }
-    public void setIdentifiantConnexion(String identifiantConnexion) { this.identifiantConnexion = identifiantConnexion; }
+    public String getPrenom()                       { return prenom; }
+    public void   setPrenom(String v)               { this.prenom = v; }
 
-    public String getEmail() { return email; }
-    public void setEmail(String email) { this.email = email; }
+    public String getEmail()                        { return email; }
+    public void   setEmail(String v)                { this.email = v; }
 
-    public String getMotDePasse() { return motDePasse; }
-    public void setMotDePasse(String motDePasse) { this.motDePasse = motDePasse; }
+    public String getRole()                         { return role; }
+    public void   setRole(String v)                 { this.role = v; }
 
-    public String getRole() { return role; }
-    public void setRole(String role) { this.role = role; }
+    public String getMotDePasse()                   { return motDePasse; }
+    public void   setMotDePasse(String v)           { this.motDePasse = v; }
+
+    @Override
+    public String toString() {
+        return (nom != null ? nom : "?") + " " + (prenom != null ? prenom : "")
+             + " [" + (role != null ? role : "?") + "]";
+    }
 }

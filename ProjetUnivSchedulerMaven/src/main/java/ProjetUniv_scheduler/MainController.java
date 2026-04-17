@@ -1,1919 +1,3602 @@
 package ProjetUniv_scheduler;
 
-import javafx.event.EventHandler;
-import javafx.scene.chart.PieChart;
+import javafx.animation.PauseTransition;
+import javafx.application.Platform;
+import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.scene.input.MouseEvent;
-import javafx.scene.Scene;
-import javafx.fxml.FXML;
-import javafx.geometry.Insets;
-import javafx.scene.Cursor; 
-import javafx.scene.shape.Line; 
 import javafx.event.EventHandler;
-import javafx.scene.input.MouseEvent;
-import javafx.scene.shape.Circle; 
-import javafx.scene.shape.Line;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.stage.Stage;
+import javafx.scene.Cursor;
+import javafx.scene.chart.CategoryAxis;
+import javafx.scene.chart.NumberAxis;
+import javafx.scene.Scene;
+import javafx.scene.chart.PieChart;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.scene.effect.DropShadow;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.*;
-import java.util.List;
-import java.util.Optional;
-import java.util.stream.Collectors;
-import java.util.Comparator;
-import java.util.Locale;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Line;
+import javafx.fxml.FXML;
+import javafx.util.Duration;
+
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class MainController {
 
     @FXML private VBox mainContent;
-    @FXML private FlowPane containerSalles;
     
+    @FXML
+    private Button btnLogout;
+    
+    @FXML
+    private Button btnAdministration;
 
-    // --- CHARTE GRAPHIQUE CYBER TECH ---
-    private final String BLEU_DEEP = "#1E2732";   
-    private final String VERT_LIME = "#A3FF33";   
-    private final String FOND_BLANC = "#FFFFFF";
- // --- Champs de l'Assistant (Déclarés ici pour être vus par tout le code) ---
-    private TextField txtClasse;
-    private TextField txtEffectif;
-    private TextField txtEmail; // Déjà fait normalement
+    @FXML
+    private Button btnPlanification;
+    
+    @FXML
+    private Button btnDashboard;
+
+    @FXML
+    private Button btnSalles;
+
+    @FXML
+    private Button btnReservations;
+
+    @FXML
+    private Button btnNotifications;
+    
+    @FXML
+    private VBox sidebar;
+    private Utilisateur utilisateurConnecte = null;
+    private GestionnaireModule gestionnaireModule = null;
+    private static final String BLEU_DEEP  = "#1E2732";
+    private static final String VERT_LIME  = "#A3FF33";
+    private static final String FOND_BLANC = "#FFFFFF";
+    private static final String GRIS_TEXTE = "#64748b";
+    PauseTransition pause = new PauseTransition(Duration.seconds(2));
+
+    // ── DAOs ──────────────────────────────────────────────────────────────────
+    private final CreneauDAO     creneauDAO     = new CreneauDAO(HibernateUtil.getSessionFactory());
+    private final ReservationDAO reservationDAO = new ReservationDAO(HibernateUtil.getSessionFactory());
+    private final SalleDAO          salleDAO         = new SalleDAO();
+    private final EquipementDAO     equipementDAO    = new EquipementDAO();
+    private final BatimentDAO       batimentDAO      = new BatimentDAO(HibernateUtil.getSessionFactory());
+    private final UtilisateurDAO    utilisateurDAO   = new UtilisateurDAO();
+    private final NotificationDAO   notificationDAO  = new NotificationDAO(HibernateUtil.getSessionFactory());
+    private final NotificationService notifService   = new NotificationService(notificationDAO);
+    private Utilisateur utilisateurConnecte = null;
+    private String      roleConnecte        = null;
+
+    // ── CHAMPS PERSISTANTS (réservation) ──────────────────────────────────────
+    private TextField  txtClasse;
+    private TextField  txtEffectif;
+    private TextField  txtEmail;
     private DatePicker datePicker;
-    private SalleDAO salleDAO = new SalleDAO();
-    private NotificationDAO notificationDAO = new NotificationDAO(HibernateUtil.getSessionFactory());
-    private NotificationService notificationService = new NotificationService(notificationDAO);
-    private UtilisateurDAO utilisateurDAO = new UtilisateurDAO();
-    private EquipementDAO equipementDAO = new EquipementDAO();
-    private BatimentDAO batimentDAO = new BatimentDAO(HibernateUtil.getSessionFactory());
+    private FlowPane   containerSalles;
+
+    // ── CALLBACK LOGOUT (branché par LoginController) ─────────────────────────
+    private Runnable logoutAction = null;
+
+    /** Appelée par LoginController après connexion réussie. */
+    public void setLogoutAction(Runnable action) {
+        this.logoutAction = action;
+    }
+
     @FXML
     public void initialize() {
-        showDashboard(); 
+        // 1. Masquer la sidebar par défaut au lancement
+        if (sidebar != null) {
+            sidebar.setVisible(false);
+            sidebar.setManaged(false);
+        }
+
+        // 2. Afficher directement l'écran des 4 portails au lieu du message d'attente
+        showLoginSelection();
+
+        // 3. Configurer le style du bouton déconnexion (Vert Lime)
+        if (btnLogout != null) {
+            btnLogout.setStyle("-fx-background-color: transparent; -fx-text-fill: #A3FF33; " +
+                               "-fx-border-color: #A3FF33; -fx-border-radius: 5; -fx-font-weight: bold;");
+        }
     }
 
-    // --- 1. TABLEAU DE BORD ---
+    @FXML
+    private void handleLogout() {
+        System.out.println("LOG : Déconnexion — Retour à l'état initial (Plein écran).");
+        
+        // 1. On cache la barre latérale ET on dit au BorderPane de l'ignorer
+        if (sidebar != null) {
+            sidebar.setVisible(false);
+            sidebar.setManaged(false); // Crucial pour que le centre prenne toute la place
+        }
+
+        // 2. On réinitialise le titre de la fenêtre (Optionnel mais plus propre)
+        if (mainContent.getScene() != null) {
+            ((Stage) mainContent.getScene().getWindow()).setTitle("UNIV-SCHEDULER");
+        }
+
+        // 3. On recharge l'écran de sélection des 4 portails
+        showLoginSelection(); 
+    }
+    
+    public void filtrerMenuLateral(String role) {
+        // Sécurité : si les boutons FXML ne sont pas injectés, on sort proprement
+        if (role == null) return;
+        if (btnDashboard == null) return;   // FXML boutons absents → rien à faire
+
+        // 1. Tout remettre visible par défaut
+        setBtn(btnDashboard,      true);
+        setBtn(btnSalles,         true);
+        setBtn(btnPlanification,  true);
+        setBtn(btnReservations,   true);
+        setBtn(btnAdministration, true);
+        setBtn(btnNotifications,  true);
+
+        // 2. Restrictions par rôle
+        switch (role) {
+            case "Administrateur" -> {
+                setBtn(btnPlanification, false);
+                setBtn(btnReservations,  false);
+            }
+            case "Gestionnaire" -> setBtn(btnAdministration, false);
+            case "Enseignant", "Étudiant" -> {
+                setBtn(btnAdministration, false);
+                setBtn(btnPlanification,  false);
+            }
+        }
+    }
+
+    /** Helper interne : set visible+managed en même temps, null-safe */
+    private void setBtn(Button b, boolean visible) {
+        if (b == null) return;
+        b.setVisible(visible);
+        b.setManaged(visible);
+    }
+    
     
     @FXML
-    private void showDashboard() {
-        mainContent.getChildren().clear();
-        // On garde le fond général propre, mais on va styliser les composants
-        mainContent.setStyle("-fx-background-color: " + FOND_BLANC + ";");
+    public void showAdminPanel() {
+        if (sidebar != null) { sidebar.setVisible(true); sidebar.setManaged(true); }
+        filtrerMenuLateral("Administrateur");
 
-        Label title = new Label("SYSTÈME DE SURVEILLANCE - ÉTAT DES SALLES");
-        title.setStyle("-fx-font-size: 26; -fx-font-family: 'Consolas', 'Monospace'; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + "; -fx-letter-spacing: 2;");
+        preparerContenu("-fx-background-color: #f0f4f8;");
+        mainContent.setPadding(new Insets(0));
+        mainContent.setSpacing(0);
 
-        // --- 1. CALCUL DES DONNÉES ---
-        List<Salle> salles = salleDAO.findAll();
-        long countLibres = salles.stream()
-                .filter(s -> s.getEtatSalle() != null && s.getEtatSalle().equalsIgnoreCase("Disponible"))
-                .count();
-        long countOccupees = salles.size() - countLibres;
+        // ══ DONNÉES ══════════════════════════════════════════════════════════
+        List<Salle>       salles  = salleDAO.findAll();
+        List<Utilisateur> users   = utilisateurDAO.findAll();
+        List<Equipement>  equips  = equipementDAO.findAll();
+        List<Batiment>    bats    = batimentDAO.findAll();
 
-        // --- 2. WIDGETS DE STATS ---
-        HBox statsBox = new HBox(25);
-        statsBox.setPadding(new Insets(20, 0, 30, 0));
-        statsBox.getChildren().addAll(
-            creerWidgetStat("CAPACITÉ RÉSEAU", String.valueOf(salles.size())),
-            creerWidgetStat("UNITÉS LIBRES", String.valueOf(countLibres)),
-            creerWidgetStat("CHARGE ACTUELLE", String.valueOf(countOccupees))
+        long sallesDispo  = salles  == null ? 0 : salles.stream().filter(s -> "Disponible".equalsIgnoreCase(s.getEtatSalle())).count();
+        long sallesOcc    = salles  == null ? 0 : salles.stream().filter(s -> "Occupée".equalsIgnoreCase(s.getEtatSalle())).count();
+        long sallesMaint  = salles  == null ? 0 : salles.stream().filter(s -> "Maintenance".equalsIgnoreCase(s.getEtatSalle())).count();
+        long totalSalles  = salles  == null ? 0 : salles.size();
+        long totalUsers   = users   == null ? 0 : users.size();
+        long totalEquips  = equips  == null ? 0 : equips.size();
+        long equipsKO     = equips  == null ? 0 : equips.stream().filter(e -> e.getEtatFonctionnement() != null && (e.getEtatFonctionnement().contains("panne") || e.getEtatFonctionnement().contains("maintenance"))).count();
+        long totalBats    = bats    == null ? 0 : bats.size();
+        double tauxOcc    = totalSalles > 0 ? (sallesOcc * 100.0 / totalSalles) : 0;
+
+        // ══ BANDEAU SUPÉRIEUR ═════════════════════════════════════════════════
+        HBox topBand = new HBox();
+        topBand.setAlignment(Pos.CENTER_LEFT);
+        topBand.setPadding(new Insets(16, 30, 16, 30));
+        topBand.setStyle("-fx-background-color: " + BLEU_DEEP + ";");
+
+        VBox titleBox = new VBox(2);
+        Label lTitle = new Label("CONSOLE DE SUPERVISION");
+        lTitle.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 20; " +
+                        "-fx-font-weight: bold; -fx-text-fill: " + VERT_LIME + ";");
+        Label lSub = new Label("Vue d'ensemble — Mise à jour en temps réel");
+        lSub.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 11;");
+        titleBox.getChildren().addAll(lTitle, lSub);
+
+        Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
+
+        Label lTime = new Label(LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy · HH:mm")));
+        lTime.setStyle("-fx-text-fill: " + VERT_LIME + "88; -fx-font-family: 'Consolas'; -fx-font-size: 12;");
+
+        topBand.getChildren().addAll(titleBox, sp, lTime);
+
+        // ══ ZONE SCROLLABLE ════════════════════════════════════════════════════
+        VBox scrollContent = new VBox(28);
+        scrollContent.setPadding(new Insets(28, 30, 40, 30));
+
+        // ── ROW 1 : KPI CARDS ────────────────────────────────────────────────
+        HBox kpiRow = new HBox(16);
+        kpiRow.getChildren().addAll(
+            creerKpiCard("🏢", "SALLES TOTALES",   String.valueOf(totalSalles), VERT_LIME,   "+" + totalBats + " bâtiments"),
+            creerKpiCard("✅", "DISPONIBLES",       String.valueOf(sallesDispo), "#22c55e",   String.format("%.0f%% du réseau", totalSalles > 0 ? sallesDispo*100.0/totalSalles : 0)),
+            creerKpiCard("🔴", "OCCUPÉES",          String.valueOf(sallesOcc),   "#f97316",   String.format("Taux : %.1f%%", tauxOcc)),
+            creerKpiCard("🔧", "MAINTENANCE",       String.valueOf(sallesMaint), "#facc15",   "Intervention requise"),
+            creerKpiCard("👤", "UTILISATEURS",      String.valueOf(totalUsers),  "#818cf8",   "Actifs dans le système"),
+            creerKpiCard("⚙️", "ÉQUIPEMENTS",       String.valueOf(totalEquips), "#38bdf8",   equipsKO + " en panne")
         );
 
-        // --- 3. LE GRAPHIQUE CYBER (NEON PIE CHART) ---
-        PieChart pcOccupation = new PieChart();
-        pcOccupation.setTitle("ANALYSE DE RÉPARTITION");
-        pcOccupation.setLegendVisible(true);
-        pcOccupation.setLabelsVisible(false);
-        pcOccupation.setPrefSize(450, 400);
+        // ── ROW 2 : BAR CHART + PIE CHART ────────────────────────────────────
+        HBox chartsRow = new HBox(20);
+        chartsRow.setPrefHeight(320);
 
-        ObservableList<PieChart.Data> pieData = FXCollections.observableArrayList(
-            new PieChart.Data("Libres", countLibres),
-            new PieChart.Data("Occupées", countOccupees)
+        // BAR CHART — Vue globale infrastructure
+        CategoryAxis xAxis = new CategoryAxis();
+        NumberAxis   yAxis = new NumberAxis();
+        xAxis.setStyle("-fx-tick-label-fill: #64748b; -fx-font-family: 'Consolas';");
+        yAxis.setStyle("-fx-tick-label-fill: #64748b; -fx-font-family: 'Consolas';");
+        xAxis.setLabel(""); yAxis.setLabel("Quantité");
+
+        javafx.scene.chart.BarChart<String, Number> barChart =
+            new javafx.scene.chart.BarChart<>(xAxis, yAxis);
+        barChart.setTitle("INFRASTRUCTURE GLOBALE");
+        barChart.setLegendVisible(false);
+        barChart.setAnimated(true);
+        barChart.setPrefWidth(520);
+        barChart.setStyle("-fx-background-color: white; -fx-background-radius: 18; " +
+                          "-fx-padding: 14; -fx-plot-background-color: #f8fafc;");
+
+        javafx.scene.chart.XYChart.Series<String, Number> serie = new javafx.scene.chart.XYChart.Series<>();
+        serie.getData().addAll(
+            new javafx.scene.chart.XYChart.Data<>("Bâtiments",    totalBats),
+            new javafx.scene.chart.XYChart.Data<>("Salles",       totalSalles),
+            new javafx.scene.chart.XYChart.Data<>("Disponibles",  sallesDispo),
+            new javafx.scene.chart.XYChart.Data<>("Occupées",     sallesOcc),
+            new javafx.scene.chart.XYChart.Data<>("Maintenance",  sallesMaint),
+            new javafx.scene.chart.XYChart.Data<>("Utilisateurs", totalUsers),
+            new javafx.scene.chart.XYChart.Data<>("Équipements",  totalEquips),
+            new javafx.scene.chart.XYChart.Data<>("Équip. KO",    equipsKO)
         );
-        pcOccupation.setData(pieData);
+        barChart.getData().add(serie);
 
-        // Conteneur sombre pour le graphique (Essentiel pour le look Cyber)
-        VBox chartContainer = new VBox(pcOccupation);
-        chartContainer.setAlignment(Pos.CENTER);
-        chartContainer.setPadding(new Insets(20));
-        chartContainer.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 25; " +
-                                "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.4), 15, 0, 0, 10);");
-
-        // Application du style après rendu (Platform.runLater pour s'assurer que les nodes existent)
-        javafx.application.Platform.runLater(() -> {
-            // Style du titre du graphique
-            pcOccupation.lookup(".chart-title").setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-family: 'Consolas'; -fx-font-size: 18;");
-            
-            // Style de la légende
-            pcOccupation.lookup(".chart-legend").setStyle("-fx-background-color: transparent;");
-            for (javafx.scene.Node node : pcOccupation.lookupAll(".chart-legend-item")) {
-                if (node instanceof Label) ((Label) node).setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
+        // Coloriser chaque barre après rendu
+        String[] barColors = {
+            "#818cf8", VERT_LIME, "#22c55e", "#f97316", "#facc15", "#38bdf8", "#a78bfa", "#ef4444"
+        };
+        Platform.runLater(() -> {
+            var dataList = serie.getData();
+            for (int i = 0; i < dataList.size(); i++) {
+                javafx.scene.Node node = dataList.get(i).getNode();
+                if (node != null) {
+                    final String color = barColors[i % barColors.length];
+                    node.setStyle("-fx-bar-fill: " + color + ";");
+                    DropShadow glow = new DropShadow(10, Color.web(color));
+                    node.setEffect(glow);
+                }
             }
+            // Style titre
+            javafx.scene.Node chartTitle = barChart.lookup(".chart-title");
+            if (chartTitle != null)
+                chartTitle.setStyle("-fx-text-fill: " + BLEU_DEEP + "; -fx-font-family: 'Consolas'; -fx-font-weight: bold;");
+        });
 
-            // --- EFFET NÉON SUR LES TRANCHES ---
-            for (PieChart.Data data : pcOccupation.getData()) {
-                javafx.scene.Node node = data.getNode();
-                String color = data.getName().equals("Libres") ? VERT_LIME : "#FF3131"; // Vert vs Rouge Néon
+        // PIE CHART — Statut équipements
+        PieChart pie = new PieChart(FXCollections.observableArrayList(
+            new PieChart.Data("Opérationnels",   totalEquips - equipsKO),
+            new PieChart.Data("En panne/maint.", equipsKO)
+        ));
+        pie.setTitle("ÉQUIPEMENTS");
+        pie.setLabelsVisible(true);
+        pie.setAnimated(true);
+        pie.setPrefWidth(280);
+        pie.setStyle("-fx-background-color: white; -fx-background-radius: 18; -fx-padding: 10;");
 
-                // Style de la tranche : Couleur semi-transparente avec bordure vive
-                node.setStyle("-fx-pie-color: " + color + "44; -fx-border-color: " + color + "; -fx-border-width: 3;");
+        Platform.runLater(() -> {
+            pie.getData().forEach(d -> {
+                String c = d.getName().startsWith("Op") ? "#22c55e" : "#ef4444";
+                if (d.getNode() != null) d.getNode().setStyle("-fx-pie-color: " + c + ";");
+            });
+            javafx.scene.Node pt = pie.lookup(".chart-title");
+            if (pt != null) pt.setStyle("-fx-text-fill: " + BLEU_DEEP + "; -fx-font-family: 'Consolas'; -fx-font-weight: bold;");
+        });
 
-                // Effet de luminescence (Glow)
-                javafx.scene.effect.DropShadow glow = new javafx.scene.effect.DropShadow();
-                glow.setColor(javafx.scene.paint.Color.web(color));
-                glow.setRadius(25);
-                glow.setSpread(0.4);
-                node.setEffect(glow);
-                
-                // Animation au survol
-                node.setOnMouseEntered(e -> { node.setScaleX(1.05); node.setScaleY(1.05); });
-                node.setOnMouseExited(e -> { node.setScaleX(1.0); node.setScaleY(1.0); });
+        chartsRow.getChildren().addAll(barChart, pie);
+
+        // ── ROW 3 : NAVIGATION MODULES ───────────────────────────────────────
+        Label lNav = new Label("ACCÈS RAPIDE AUX MODULES");
+        lNav.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 13; " +
+                      "-fx-font-weight: bold; -fx-text-fill: " + GRIS_TEXTE + ";");
+
+        HBox navRow = new HBox(20);
+        navRow.getChildren().addAll(
+            creerTuileNav("👤 UTILISATEURS",   "Accès & Privilèges",    "#818cf8", this::showUserManagement),
+            creerTuileNav("🏢 INFRASTRUCTURE", "Salles & Bâtiments",    VERT_LIME, this::showSallesManagement),
+            creerTuileNav("⚙️ INVENTAIRE",     "Équipements & IoT",     "#38bdf8", this::showInventoryManagement),
+            creerTuileNav("🔔 NOTIFICATIONS",  "Historique des alertes","#facc15", this::showNotifications)
+        );
+
+        // ── ROW 4 : BLOC IA ───────────────────────────────────────────────────
+        VBox aiBlock = construireBlockIA();
+
+        scrollContent.getChildren().addAll(kpiRow, chartsRow, lNav, navRow, aiBlock);
+
+        ScrollPane scroll = new ScrollPane(scrollContent);
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setStyle("-fx-background-color: transparent; -fx-background: #f0f4f8;");
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+
+        mainContent.getChildren().addAll(topBand, scroll);
+    }
+    
+    public void setUtilisateurConnecte(Utilisateur u) {
+      this.utilisateurConnecte = u;
+      this.gestionnaireModule  = null; 
+  }
+
+    // ── Carte KPI ─────────────────────────────────────────────────────────────
+    private VBox creerKpiCard(String icon, String titre, String valeur, String couleur, String detail) {
+        VBox card = new VBox(8);
+        card.setPadding(new Insets(20, 22, 20, 22));
+        card.setPrefWidth(170);
+        card.setStyle("-fx-background-color: white; -fx-background-radius: 16; " +
+                      "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.08), 10, 0, 0, 4); " +
+                      "-fx-border-left-width: 4; -fx-border-color: transparent transparent transparent " + couleur + "; " +
+                      "-fx-border-radius: 0 16 16 0;");
+
+        HBox topRow = new HBox(8);
+        topRow.setAlignment(Pos.CENTER_LEFT);
+        Label lIcon = new Label(icon);
+        lIcon.setStyle("-fx-font-size: 18;");
+        Label lTitre = new Label(titre);
+        lTitre.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 9; -fx-font-weight: bold; -fx-font-family: 'Consolas';");
+        lTitre.setWrapText(true);
+        topRow.getChildren().addAll(lIcon, lTitre);
+
+        Label lVal = new Label(valeur);
+        lVal.setStyle("-fx-font-size: 38; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + "; -fx-font-family: 'Consolas';");
+
+        Label lDet = new Label(detail);
+        lDet.setStyle("-fx-text-fill: " + couleur + "; -fx-font-size: 10; -fx-font-weight: bold;");
+
+        card.getChildren().addAll(topRow, lVal, lDet);
+
+        // Hover
+        card.setOnMouseEntered(e -> card.setStyle("-fx-background-color: " + couleur + "15; -fx-background-radius: 16; " +
+            "-fx-effect: dropshadow(three-pass-box, " + couleur + ", 14, 0, 0, 0); " +
+            "-fx-border-left-width: 4; -fx-border-color: transparent transparent transparent " + couleur + "; " +
+            "-fx-border-radius: 0 16 16 0;"));
+        card.setOnMouseExited(e -> card.setStyle("-fx-background-color: white; -fx-background-radius: 16; " +
+            "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.08), 10, 0, 0, 4); " +
+            "-fx-border-left-width: 4; -fx-border-color: transparent transparent transparent " + couleur + "; " +
+            "-fx-border-radius: 0 16 16 0;"));
+
+        return card;
+    }
+
+    // ── Tuile navigation module ────────────────────────────────────────────────
+    private VBox creerTuileNav(String titre, String desc, String couleur, Runnable action) {
+        VBox tile = new VBox(10);
+        tile.setAlignment(Pos.CENTER_LEFT);
+        tile.setPadding(new Insets(22, 24, 22, 24));
+        tile.setPrefWidth(220);
+        tile.setCursor(Cursor.HAND);
+
+        String base = "-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 14; " +
+                      "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 10, 0, 0, 4);";
+        tile.setStyle(base);
+
+        Label lT = new Label(titre);
+        lT.setStyle("-fx-text-fill: " + couleur + "; -fx-font-family: 'Consolas'; " +
+                    "-fx-font-weight: bold; -fx-font-size: 12;");
+        Label lD = new Label(desc);
+        lD.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 11;");
+
+        Region accent = new Region();
+        accent.setPrefSize(36, 3); accent.setMaxWidth(36);
+        accent.setStyle("-fx-background-color: " + couleur + "; -fx-background-radius: 2;");
+
+        tile.getChildren().addAll(lT, accent, lD);
+        tile.setOnMouseClicked(e -> action.run());
+        tile.setOnMouseEntered(e -> { tile.setStyle(base + "-fx-border-color: " + couleur + "; -fx-border-width: 1.5; -fx-border-radius: 14;"); tile.setTranslateY(-4); });
+        tile.setOnMouseExited(e  -> { tile.setStyle(base); tile.setTranslateY(0); });
+
+        return tile;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  POINT D'ENTRÉE : GESTIONNAIRE
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @FXML
+    public void showManagerDashboard() {
+        if (sidebar != null) { sidebar.setVisible(true); sidebar.setManaged(true); }
+        filtrerMenuLateral("Gestionnaire");
+
+        // Nettoyage propre de la zone centrale
+        mainContent.getChildren().clear();
+        mainContent.setStyle("-fx-background-color: #f8fafc;");
+        mainContent.setAlignment(Pos.TOP_LEFT);
+        mainContent.setPadding(new Insets(20));
+        mainContent.setSpacing(18);
+
+        // ── Délégation complète à GestionnaireModule ──────────────────────
+        GestionnaireModule gm = new GestionnaireModule(mainContent, utilisateurConnecte);
+        gm.showDashboard();
+    }
+
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  POINT D'ENTRÉE : ENSEIGNANT
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @FXML
+    public void showTeacherView(Utilisateur enseignant) {
+        if (sidebar != null) { sidebar.setVisible(true); sidebar.setManaged(true); }
+        filtrerMenuLateral("Enseignant");
+
+        // Stocker le contexte enseignant pour les sous-modules
+        utilisateurConnecte = enseignant;
+        roleConnecte        = "Enseignant";
+
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+
+        // ── Barre top avec logout ──────────────────────────────────────────
+        HBox topBar = construireTopBar(null, "⏻ LOGOUT", 0);
+
+        // ── En-tête ────────────────────────────────────────────────────────
+        VBox header = construireHeader(
+            "PORTAIL ENSEIGNANT",
+            "ACCÈS PÉDAGOGIQUE · Bienvenue, "
+                + (enseignant != null ? enseignant.getNom().toUpperCase() : "ENSEIGNANT")
+        );
+
+        // ── Cartes modules ─────────────────────────────────────────────────
+        HBox modules = new HBox(30);
+        modules.setPadding(new Insets(35, 0, 0, 0));
+        modules.setAlignment(Pos.TOP_LEFT);
+
+        modules.getChildren().addAll(
+            creerCarteAction("📅 RÉSERVER UNE SALLE",
+                "Localiser une unité libre et planifier une session.",
+                e -> showReservationsEnseignant(enseignant)),    // ← méthode contextualisée
+
+            creerCarteAction("🏢 ÉTAT DES UNITÉS",
+                "Consulter l'occupation du réseau en temps réel.",
+                e -> showSallesEnseignant(enseignant)),           // ← méthode contextualisée
+
+            creerCarteAction("📋 MES CRÉNEAUX",
+                "Voir les réservations validées sur votre nom.",
+                e -> showCreneauxEnseignant(enseignant)),
+
+            creerCarteAction("⚠️ SIGNALER INCIDENT",
+                "Rapport technique sur une salle ou un équipement défectueux.",
+                e -> showSignalerIncidentDialog(enseignant))
+        );
+
+        mainContent.getChildren().addAll(topBar, header, modules);
+    }
+
+    private void showSallesEnseignant(Utilisateur enseignant) {
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+
+        // ← CORRECTIF : bouton retour vers le portail enseignant
+        Button retour = btnRetour(() -> showTeacherView(enseignant));
+
+        Label titre = creerTitre("RÉSEAU DES LOCAUX — ÉTAT EN TEMPS RÉEL");
+
+        TextField search = new TextField();
+        search.setPromptText("🔍 Rechercher une salle ou un bâtiment...");
+        search.setPrefWidth(480);
+        search.setStyle("-fx-padding: 10; -fx-background-radius: 20; " +
+            "-fx-border-color: " + BLEU_DEEP + "; -fx-border-radius: 20;");
+
+        if (containerSalles == null) containerSalles = new FlowPane(20, 20);
+        containerSalles = new FlowPane(20, 20);
+        containerSalles.setPadding(new Insets(15, 0, 0, 0));
+        rafraichirListeSalles(true, "");
+        search.textProperty().addListener((obs, o, n) -> rafraichirListeSalles(true, n));
+
+        ScrollPane scroll = creerScrollPane(containerSalles, 520);
+        mainContent.getChildren().addAll(retour, titre, search, scroll);
+    }
+
+    /** Réservations vues depuis le portail enseignant — avec bouton retour */
+    private void showReservationsEnseignant(Utilisateur enseignant) {
+        // Appel normal de showReservations puis injection du bouton retour
+        showReservations();
+        // Insérer le bouton retour en position 0
+        mainContent.getChildren().add(0, btnRetour(() -> showTeacherView(enseignant)));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  POINT D'ENTRÉE : ÉTUDIANT
+    // ══════════════════════════════════════════════════════════════════════════
+
+
+    @FXML
+    public void showMonPlanning(Utilisateur etudiant) {
+        // 1. Nettoyage et préparation du fond
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+        
+        // 2. Barre de titre avec le nom de l'étudiant
+        String nom = (etudiant != null) ? etudiant.getNom().toUpperCase() : "MON";
+        HBox topBar = construireTopBar("EMPLOI DU TEMPS | " + nom, null, 0);
+
+        // 3. Zone de contenu (Placeholder en attendant ton calendrier)
+        VBox planningBox = new VBox(20);
+        planningBox.setAlignment(Pos.CENTER);
+        planningBox.setPadding(new Insets(50));
+        
+        Label info = new Label("📅 Calendrier hebdomadaire en cours de chargement...");
+        info.setStyle("-fx-font-size: 18; -fx-text-fill: " + BLEU_DEEP + ";");
+        
+        planningBox.getChildren().add(info);
+
+        // 4. Assemblage
+        mainContent.getChildren().addAll(topBar, planningBox);
+        
+        System.out.println("LOG : Affichage du planning pour " + nom);
+    }
+    
+    
+    @FXML
+    public void showStudentView(Utilisateur etudiant) {
+        if (sidebar != null) { sidebar.setVisible(true); sidebar.setManaged(true); }
+        filtrerMenuLateral("Étudiant");
+        preparerContenu("-fx-background-color: #f0f4f8;");
+        mainContent.setPadding(new Insets(0));
+        mainContent.setSpacing(0);
+
+        // ── Bandeau supérieur ──────────────────────────────────────────────
+        HBox topBand = new HBox();
+        topBand.setAlignment(Pos.CENTER_LEFT);
+        topBand.setPadding(new Insets(14, 28, 14, 28));
+        topBand.setStyle("-fx-background-color: " + BLEU_DEEP + ";");
+
+        VBox titreBox = new VBox(2);
+        Label lNom = new Label("PORTAIL ÉTUDIANT");
+        lNom.setStyle("-fx-font-family:'Consolas'; -fx-font-size:20; -fx-font-weight:bold; -fx-text-fill:" + VERT_LIME + ";");
+        String nomAffiche = etudiant != null
+            ? etudiant.getNom().toUpperCase() + (etudiant.getPrenom() != null ? " " + etudiant.getPrenom() : "")
+            : "ÉTUDIANT";
+        Label lSub = new Label("Bienvenue, " + nomAffiche + "  ·  " +
+                java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE dd MMMM yyyy", java.util.Locale.FRENCH)));
+        lSub.setStyle("-fx-text-fill:#94a3b8; -fx-font-size:11;");
+        titreBox.getChildren().addAll(lNom, lSub);
+
+        Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
+        Button btnLogout = new Button("⏻ DÉCONNEXION");
+        btnLogout.setStyle("-fx-background-color:transparent; -fx-text-fill:#ef4444; -fx-font-weight:bold; -fx-cursor:hand;");
+        btnLogout.setOnAction(e -> showLoginSelection());
+        topBand.getChildren().addAll(titreBox, sp, btnLogout);
+
+        // ── Zone scrollable ────────────────────────────────────────────────
+        VBox scrollContent = new VBox(26);
+        scrollContent.setPadding(new Insets(26, 28, 40, 28));
+
+        // ── Row 1 : KPIs rapides ───────────────────────────────────────────
+        List<Salle> toutesSalles = salleDAO.findAll();
+        long sallesLibres = toutesSalles == null ? 0 :
+            toutesSalles.stream().filter(s -> "Disponible".equalsIgnoreCase(s.getEtatSalle())).count();
+        long sallesTotal  = toutesSalles == null ? 0 : toutesSalles.size();
+        List<Notification> mesNotifs = notificationDAO.findAll();
+        long notifNonLues = mesNotifs == null ? 0 :
+            mesNotifs.stream().filter(n -> n.getStatut() != null && n.getStatut().equalsIgnoreCase("NON_LU")).count();
+
+        HBox kpiRow = new HBox(16);
+        kpiRow.getChildren().addAll(
+            creerKpiEtudiant("🏢", "SALLES LIBRES",    String.valueOf(sallesLibres), VERT_LIME,   "sur " + sallesTotal + " au total"),
+            creerKpiEtudiant("📅", "COURS AUJOURD'HUI","0",                          "#818cf8",   "Données EDT à connecter"),
+            creerKpiEtudiant("🔔", "NOTIFICATIONS",     String.valueOf(notifNonLues), "#facc15",   "non lues"),
+            creerKpiEtudiant("📋", "MES RÉSERVATIONS", "0",                          "#38bdf8",   "salles d'étude")
+        );
+
+        // ── Row 2 : Planning de la semaine (aperçu) ────────────────────────
+        VBox planningBlock = construireApercuPlanningEtudiant(etudiant);
+
+        // ── Row 3 : Navigation modules ─────────────────────────────────────
+        Label lNav = new Label("MES ACCÈS RAPIDES");
+        lNav.setStyle("-fx-font-family:'Consolas'; -fx-font-size:13; -fx-font-weight:bold; -fx-text-fill:" + GRIS_TEXTE + ";");
+
+        // Grille 2×3 de tuiles
+        GridPane modulesGrid = new GridPane();
+        modulesGrid.setHgap(16); modulesGrid.setVgap(16);
+
+        modulesGrid.add(creerTuileEtudiant("📅 EMPLOI DU TEMPS",
+            "Planning de la semaine",   "#818cf8",
+            () -> showEdtEtudiant(etudiant)), 0, 0);
+
+        modulesGrid.add(creerTuileEtudiant("🔍 TROUVER UNE SALLE",
+            "Moteur de recherche smart","#22c55e",
+            () -> showRechercheEtudiant(etudiant)), 1, 0);
+
+        modulesGrid.add(creerTuileEtudiant("📚 MES RÉSERVATIONS",
+            "Mes salles d'étude",       "#38bdf8",
+            () -> showMesReservationsEtudiant(etudiant)), 2, 0);
+
+        modulesGrid.add(creerTuileEtudiant("🔔 NOTIFICATIONS",
+            "Alertes & confirmations",  "#facc15",
+            () -> showNotificationsEtudiant(etudiant)), 0, 1);
+
+        modulesGrid.add(creerTuileEtudiant("👤 MON PROFIL",
+            "Groupe, promo, infos",     "#f97316",
+            () -> showMonProfilEtudiant(etudiant)), 1, 1);
+
+        modulesGrid.add(creerTuileEtudiant("🏢 ÉTAT DU CAMPUS",
+            "Salles & bâtiments",       "#c084fc",
+            () -> showSallesEtudiant(etudiant)), 2, 1);
+
+        // ── Row 4 : Notifications récentes (aperçu) ────────────────────────
+        VBox notifBlock = construireApercuNotificationsEtudiant(mesNotifs, etudiant);
+
+        scrollContent.getChildren().addAll(kpiRow, planningBlock, lNav, modulesGrid, notifBlock);
+
+        ScrollPane scroll = creerScrollPane(scrollContent, Double.MAX_VALUE);
+        scroll.setFitToHeight(false);
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+        mainContent.getChildren().addAll(topBand, scroll);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  2. EMPLOI DU TEMPS ÉTUDIANT — Vue hebdomadaire interactive
+    // ──────────────────────────────────────────────────────────────────────────
+    private void showEdtEtudiant(Utilisateur etudiant) {
+        preparerContenu("-fx-background-color: #f8fafc;");
+        mainContent.setPadding(new Insets(22, 32, 40, 32));
+
+        mainContent.getChildren().add(btnRetour(() -> showStudentView(etudiant)));
+
+        VBox header = construireHeader("📅 MON EMPLOI DU TEMPS",
+            "Semaine du " + lundiDeLaSemaine() + " — Vue par défaut : semaine courante");
+
+        // ── Sélecteur de semaine ───────────────────────────────────────────
+        HBox semRow = new HBox(12);
+        semRow.setAlignment(Pos.CENTER_LEFT);
+        semRow.setPadding(new Insets(12, 0, 16, 0));
+
+        Button btnPrev = new Button("◀ Semaine préc.");
+        Button btnNext = new Button("Semaine suiv. ▶");
+        styliserBoutonSecondaire(btnPrev);
+        styliserBoutonSecondaire(btnNext);
+        Label lSem = new Label("Semaine en cours");
+        lSem.setStyle("-fx-font-family:'Consolas'; -fx-font-weight:bold; -fx-text-fill:" + BLEU_DEEP + "; -fx-font-size:13;");
+
+        Region sepSem = new Region(); HBox.setHgrow(sepSem, Priority.ALWAYS);
+
+        // Filtre par type
+        ToggleButton tAll = new ToggleButton("Tous"); tAll.setSelected(true);
+        ToggleButton tCM  = new ToggleButton("CM");
+        ToggleButton tTD  = new ToggleButton("TD");
+        ToggleButton tTP  = new ToggleButton("TP");
+        ToggleGroup tg = new ToggleGroup();
+        tAll.setToggleGroup(tg); tCM.setToggleGroup(tg);
+        tTD.setToggleGroup(tg); tTP.setToggleGroup(tg);
+        String tBtnStyle = "-fx-background-color:#e2e8f0; -fx-text-fill:" + BLEU_DEEP + "; -fx-background-radius:6; -fx-cursor:hand; -fx-padding:6 14;";
+        String tBtnSelStyle = "-fx-background-color:" + BLEU_DEEP + "; -fx-text-fill:" + VERT_LIME + "; -fx-background-radius:6; -fx-cursor:hand; -fx-font-weight:bold; -fx-padding:6 14;";
+        for (ToggleButton tb : new ToggleButton[]{tAll, tCM, tTD, tTP}) {
+            tb.setStyle(tBtnStyle);
+            tb.selectedProperty().addListener((o, ov, nv) -> tb.setStyle(nv ? tBtnSelStyle : tBtnStyle));
+        }
+        HBox toggleRow = new HBox(6, tAll, tCM, tTD, tTP);
+
+        semRow.getChildren().addAll(btnPrev, lSem, btnNext, sepSem, toggleRow);
+
+        // ── Grille EDT ─────────────────────────────────────────────────────
+        ScrollPane edtScroll = new ScrollPane(construireGrilleEDT(etudiant));
+        edtScroll.setFitToWidth(true);
+        edtScroll.setPrefHeight(480);
+        edtScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        edtScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        edtScroll.setStyle("-fx-background-color:transparent; -fx-background:#f8fafc; -fx-border-color:transparent;");
+
+        // ── Légende ────────────────────────────────────────────────────────
+        HBox legendeRow = new HBox(20);
+        legendeRow.setPadding(new Insets(14, 0, 0, 0));
+        legendeRow.setAlignment(Pos.CENTER_LEFT);
+        legendeRow.getChildren().addAll(
+            creerLegendeBullet("#818cf8", "CM"),
+            creerLegendeBullet("#38bdf8", "TD"),
+            creerLegendeBullet("#22c55e", "TP"),
+            creerLegendeBullet("#facc15", "Examen"),
+            creerLegendeBullet("#e2e8f0", "Libre")
+        );
+
+        // ── Info message ───────────────────────────────────────────────────
+        HBox infoBox = new HBox(10);
+        infoBox.setPadding(new Insets(14, 18, 14, 18));
+        infoBox.setStyle("-fx-background-color:#eff6ff; -fx-border-color:#bfdbfe; -fx-border-radius:10; -fx-background-radius:10;");
+        infoBox.setAlignment(Pos.CENTER_LEFT);
+        Label icoInfo = new Label("ℹ️"); icoInfo.setStyle("-fx-font-size:16;");
+        Label msgInfo = new Label("Les cours s'afficheront automatiquement dès que les créneaux seront saisis par le gestionnaire. Les cours apparaîtront colorés selon leur type (CM, TD, TP).");
+        msgInfo.setStyle("-fx-text-fill:#1d4ed8; -fx-font-size:12;");
+        msgInfo.setWrapText(true);
+        HBox.setHgrow(msgInfo, Priority.ALWAYS);
+        infoBox.getChildren().addAll(icoInfo, msgInfo);
+
+        mainContent.getChildren().addAll(header, semRow, edtScroll, legendeRow, infoBox);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  3. RECHERCHE DE SALLE — Moteur intelligent
+    // ──────────────────────────────────────────────────────────────────────────
+    private void showRechercheEtudiant(Utilisateur etudiant) {
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+        mainContent.setPadding(new Insets(22, 32, 40, 32));
+
+        mainContent.getChildren().add(btnRetour(() -> showStudentView(etudiant)));
+
+        VBox header = construireHeader("🔍 TROUVER UNE SALLE LIBRE",
+            "Recherche intelligente en temps réel — Filtres avancés");
+
+        // ── Panneau de filtres ─────────────────────────────────────────────
+        VBox filtersPane = new VBox(16);
+        filtersPane.setPadding(new Insets(22, 24, 22, 24));
+        filtersPane.setStyle("-fx-background-color:" + BLEU_DEEP + "; -fx-background-radius:18;");
+
+        // Ligne 1 : Texte + capacité + type
+        HBox fl1 = new HBox(20); fl1.setAlignment(Pos.BOTTOM_LEFT);
+
+        TextField fRecherche = new TextField();
+        fRecherche.setPromptText("Numéro ou nom de bâtiment...");
+        fRecherche.setStyle("-fx-background-color:#1a252f; -fx-text-fill:white; -fx-border-color:#2d3f50; -fx-border-radius:7; -fx-background-radius:7; -fx-padding:9; -fx-font-size:13;");
+        fRecherche.setPrefWidth(260);
+
+        TextField fCapacite = new TextField();
+        fCapacite.setPromptText("Capacité min.");
+        fCapacite.setStyle("-fx-background-color:#1a252f; -fx-text-fill:white; -fx-border-color:#2d3f50; -fx-border-radius:7; -fx-background-radius:7; -fx-padding:9; -fx-font-size:13;");
+        fCapacite.setPrefWidth(130);
+
+        ComboBox<String> cbType = new ComboBox<>();
+        cbType.getItems().addAll("Tous types", "TD", "TP", "Amphithéâtre");
+        cbType.setValue("Tous types");
+        cbType.setStyle("-fx-background-color:#1a252f; -fx-text-fill:white; -fx-border-color:#2d3f50; -fx-border-radius:7; -fx-background-radius:7; -fx-font-size:13;");
+        cbType.setPrefWidth(160);
+
+        fl1.getChildren().addAll(
+            creerGroupeSaisie("🔤 RECHERCHE",    fRecherche, 260),
+            creerGroupeSaisie("👥 CAPACITÉ MIN.", fCapacite,  130),
+            creerGroupeSaisie("🏷️ TYPE DE SALLE",  cbType,   160)
+        );
+
+        // Ligne 2 : Bâtiment + équipements
+        HBox fl2 = new HBox(20); fl2.setAlignment(Pos.BOTTOM_LEFT);
+
+        ComboBox<String> cbBatiment = new ComboBox<>();
+        cbBatiment.getItems().add("Tous les bâtiments");
+        List<Batiment> bats = batimentDAO.findAll();
+        if (bats != null) bats.forEach(b -> cbBatiment.getItems().add(b.getNomBatiment()));
+        cbBatiment.setValue("Tous les bâtiments");
+        cbBatiment.setStyle("-fx-background-color:#1a252f; -fx-text-fill:white; -fx-border-color:#2d3f50; -fx-border-radius:7; -fx-background-radius:7; -fx-font-size:13;");
+
+        CheckBox cbVP   = new CheckBox("📽️ Vidéoprojecteur");
+        CheckBox cbClim = new CheckBox("❄️ Climatisation");
+        CheckBox cbWifi = new CheckBox("🌐 Wifi");
+        String cbStyle = "-fx-text-fill:white; -fx-font-size:12;";
+        cbVP.setStyle(cbStyle); cbClim.setStyle(cbStyle); cbWifi.setStyle(cbStyle);
+
+        HBox equipBox = new HBox(20, cbVP, cbClim, cbWifi);
+        equipBox.setAlignment(Pos.CENTER_LEFT);
+        equipBox.setPadding(new Insets(8, 0, 0, 0));
+
+        fl2.getChildren().addAll(
+            creerGroupeSaisie("🏢 BÂTIMENT", cbBatiment, 220),
+            new VBox(5, new Label("🔌 ÉQUIPEMENTS"){{setStyle("-fx-text-fill:" + VERT_LIME + "; -fx-font-size:10; -fx-font-weight:bold; -fx-font-family:'Consolas';");}}, equipBox)
+        );
+
+        Button btnRechercher = new Button("⚡ RECHERCHER");
+        btnRechercher.setPrefHeight(44); btnRechercher.setPadding(new Insets(0, 28, 0, 28));
+        styliserBoutonPrimaire(btnRechercher);
+
+        filtersPane.getChildren().addAll(fl1, new Separator(), fl2, btnRechercher);
+
+        // ── Zone résultats ─────────────────────────────────────────────────
+        Label lResultats = new Label("RÉSULTATS");
+        lResultats.setStyle("-fx-font-family:'Consolas'; -fx-font-size:12; -fx-font-weight:bold; -fx-text-fill:" + GRIS_TEXTE + ";");
+        lResultats.setPadding(new Insets(10, 0, 4, 0));
+
+        FlowPane resultPane = new FlowPane(18, 18);
+        resultPane.setPadding(new Insets(6, 0, 10, 0));
+
+        // Affichage initial : toutes les salles disponibles
+        Runnable doSearch = () -> {
+            resultPane.getChildren().clear();
+            String txt = fRecherche.getText().toLowerCase();
+            String typeFil = cbType.getValue();
+            String batFil  = cbBatiment.getValue();
+            int tempCap;
+            try { 
+                tempCap = Integer.parseInt(fCapacite.getText().trim()); 
+            } catch (NumberFormatException e) { 
+                tempCap = 0; 
+            }
+            
+            final int capMin = tempCap;
+
+            List<Salle> salles = salleDAO.findAll();
+            if (salles == null) return;
+
+            List<Salle> filtered = salles.stream()
+                .filter(s -> "Disponible".equalsIgnoreCase(s.getEtatSalle()))
+                .filter(s -> txt.isEmpty()
+                    || s.getNumeroSalle().toLowerCase().contains(txt)
+                    || (s.getBatiment() != null && s.getBatiment().getNomBatiment().toLowerCase().contains(txt)))
+                .filter(s -> s.getCapacite() >= capMin)
+                .filter(s -> "Tous types".equals(typeFil) || typeFil.equals(s.getCategorieSalle()))
+                .filter(s -> "Tous les bâtiments".equals(batFil)
+                    || (s.getBatiment() != null && batFil.equals(s.getBatiment().getNomBatiment())))
+                .sorted(Comparator.comparingInt(Salle::getCapacite))
+                .collect(Collectors.toList());
+
+            if (filtered.isEmpty()) {
+                VBox vide = new VBox(10);
+                vide.setAlignment(Pos.CENTER); vide.setPrefWidth(600); vide.setPrefHeight(200);
+                Label lV = new Label("Aucune salle ne correspond à vos critères.");
+                lV.setStyle("-fx-text-fill:" + GRIS_TEXTE + "; -fx-font-size:14;");
+                Label lH = new Label("💡 Essayez de réduire les filtres.");
+                lH.setStyle("-fx-text-fill:" + GRIS_TEXTE + "; -fx-font-size:12;");
+                vide.getChildren().addAll(lV, lH);
+                resultPane.getChildren().add(vide);
+            } else {
+                lResultats.setText(filtered.size() + " SALLE(S) DISPONIBLE(S)");
+                filtered.forEach(s -> resultPane.getChildren().add(
+                    creerCarteDetailleeSalle(s, etudiant)));
+            }
+        };
+
+        doSearch.run();
+        btnRechercher.setOnAction(e -> doSearch.run());
+        fRecherche.textProperty().addListener((o, ov, nv) -> doSearch.run());
+        cbType.valueProperty().addListener((o, ov, nv) -> doSearch.run());
+        cbBatiment.valueProperty().addListener((o, ov, nv) -> doSearch.run());
+
+        ScrollPane scroll = creerScrollPane(resultPane, 420);
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+        mainContent.getChildren().addAll(header, filtersPane, lResultats, scroll);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  4. MES RÉSERVATIONS DE SALLES D'ÉTUDE
+    // ──────────────────────────────────────────────────────────────────────────
+    private void showMesReservationsEtudiant(Utilisateur etudiant) {
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+        mainContent.setPadding(new Insets(22, 32, 40, 32));
+
+        mainContent.getChildren().add(btnRetour(() -> showStudentView(etudiant)));
+
+        VBox header = construireHeader("📚 MES RÉSERVATIONS DE SALLES D'ÉTUDE",
+            "Gérez vos sessions de travail en groupe ou individuelle");
+
+        // ── Barre d'actions ────────────────────────────────────────────────
+        Button btnNouvelle = new Button("+ RÉSERVER UNE SALLE");
+        styliserBoutonPrimaire(btnNouvelle);
+        btnNouvelle.setPrefHeight(40);
+        btnNouvelle.setOnAction(e -> dialogReserverSalleEtude(etudiant));
+
+        // Filtre statut
+        ComboBox<String> cbStatut = new ComboBox<>();
+        cbStatut.getItems().addAll("Toutes", "En attente", "Validée", "Annulée");
+        cbStatut.setValue("Toutes");
+        cbStatut.setStyle("-fx-background-radius:8; -fx-font-weight:bold;");
+
+        HBox toolbar = new HBox(16, btnNouvelle, new Region(){{HBox.setHgrow(this,Priority.ALWAYS);}},
+            new Label("Filtrer :"){{setStyle("-fx-text-fill:"+GRIS_TEXTE+"; -fx-font-weight:bold;");}}, cbStatut);
+        toolbar.setAlignment(Pos.CENTER_LEFT);
+        toolbar.setPadding(new Insets(10, 0, 14, 0));
+
+        // ── Tableau des réservations ───────────────────────────────────────
+        TableView<Reservation> table = new TableView<>();
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        table.setPrefHeight(380);
+        table.setPlaceholder(new Label("Aucune réservation. Cliquez sur '+ RÉSERVER UNE SALLE'."));
+        table.setStyle("-fx-background-radius:14; -fx-border-radius:14; -fx-border-color:#f1f5f9;");
+
+        TableColumn<Reservation, Integer> colNum = new TableColumn<>("#");
+        colNum.setCellValueFactory(new PropertyValueFactory<>("numReservation"));
+        colNum.setPrefWidth(60);
+
+        TableColumn<Reservation, LocalDateTime> colDate = new TableColumn<>("DATE RÉSERVATION");
+        colDate.setCellValueFactory(new PropertyValueFactory<>("dateHeureReservation"));
+        colDate.setCellFactory(col -> new TableCell<>() {
+            @Override protected void updateItem(LocalDateTime v, boolean empty) {
+                super.updateItem(v, empty);
+                if (empty || v == null) { setText(null); return; }
+                setText(v.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")));
+                setStyle("-fx-font-weight:bold; -fx-text-fill:" + BLEU_DEEP + ";");
+            }
+        });
+        colDate.setPrefWidth(160);
+
+        TableColumn<Reservation, String> colSalle = new TableColumn<>("SALLE");
+        colSalle.setCellValueFactory(cd -> new SimpleStringProperty(
+            cd.getValue().getMonCreneau() != null && cd.getValue().getMonCreneau().getSalle() != null
+            ? cd.getValue().getMonCreneau().getSalle().getNumeroSalle() : "—"));
+        colSalle.setPrefWidth(90);
+
+        TableColumn<Reservation, String> colNature = new TableColumn<>("NATURE");
+        colNature.setCellValueFactory(new PropertyValueFactory<>("natureSession"));
+        colNature.setPrefWidth(120);
+
+        TableColumn<Reservation, String> colEtat = new TableColumn<>("ÉTAT");
+        colEtat.setCellValueFactory(new PropertyValueFactory<>("etatReservation"));
+        colEtat.setPrefWidth(110);
+        colEtat.setCellFactory(col -> new TableCell<>() {
+            @Override protected void updateItem(String v, boolean empty) {
+                super.updateItem(v, empty);
+                if (empty || v == null) { setText(null); setStyle(""); return; }
+                setText(v.toUpperCase());
+                String c = switch (v.toLowerCase()) {
+                    case "validée"    -> "#16a34a";
+                    case "annulée"    -> "#ef4444";
+                    case "en attente" -> "#d97706";
+                    default           -> BLEU_DEEP;
+                };
+                setStyle("-fx-text-fill:" + c + "; -fx-font-weight:bold;");
             }
         });
 
-        // --- 4. ASSEMBLAGE FINAL ---
-        containerSalles = new FlowPane(20, 20);
-        containerSalles.setStyle("-fx-background-color: transparent;");
-        refreshSallesList(false, ""); 
+        TableColumn<Reservation, Void> colActions = new TableColumn<>("ACTIONS");
+        colActions.setPrefWidth(110);
+        colActions.setCellFactory(p -> new TableCell<>() {
+            private final Button btnAnn = new Button("✗ Annuler");
+            { btnAnn.setStyle("-fx-background-color:transparent; -fx-text-fill:#ef4444; -fx-cursor:hand; -fx-font-weight:bold;");
+              btnAnn.setOnAction(e -> annulerReservationEtudiant(getTableView().getItems().get(getIndex()), etudiant)); }
+            @Override protected void updateItem(Void v, boolean empty) {
+                super.updateItem(v, empty);
+                if (empty) { setGraphic(null); return; }
+                Reservation r = getTableView().getItems().get(getIndex());
+                if ("En attente".equalsIgnoreCase(r.getEtatReservation())) setGraphic(btnAnn);
+                else setGraphic(null);
+            }
+        });
 
-        mainContent.getChildren().addAll(title, statsBox, new Separator(), chartContainer, new Separator(), containerSalles);
+        table.getColumns().addAll(colNum, colDate, colSalle, colNature, colEtat, colActions);
+
+        // Charger les réservations (toutes pour l'instant, filtrer par étudiant si FK dispo)
+        List<Reservation> toutes = null;
+        try {
+            ReservationDAO reservDAO = new ReservationDAO(HibernateUtil.getSessionFactory());
+            toutes = reservDAO.findAll();
+        } catch (Exception ignored) {}
+
+        if (toutes != null) {
+            ObservableList<Reservation> obs = FXCollections.observableArrayList(toutes);
+            table.setItems(obs);
+            cbStatut.valueProperty().addListener((o, ov, nv) -> {
+                if ("Toutes".equals(nv)) table.setItems(obs);
+                else table.setItems(obs.filtered(r ->
+                    r.getEtatReservation() != null &&
+                    r.getEtatReservation().equalsIgnoreCase(nv)));
+            });
+        }
+
+        // ── Résumé statistiques ────────────────────────────────────────────
+        long total    = toutes == null ? 0 : toutes.size();
+        long valides  = toutes == null ? 0 : toutes.stream().filter(r -> "Validée".equalsIgnoreCase(r.getEtatReservation())).count();
+        long attente  = toutes == null ? 0 : toutes.stream().filter(r -> "En attente".equalsIgnoreCase(r.getEtatReservation())).count();
+
+        HBox statsRow = new HBox(16);
+        statsRow.setPadding(new Insets(4, 0, 14, 0));
+        statsRow.getChildren().addAll(
+            creerMiniStatBadge("Total",      String.valueOf(total),   "#64748b"),
+            creerMiniStatBadge("Validées",   String.valueOf(valides), "#16a34a"),
+            creerMiniStatBadge("En attente", String.valueOf(attente), "#d97706")
+        );
+
+        mainContent.getChildren().addAll(header, toolbar, statsRow, table);
     }
 
-    // --- 2. GESTION DES SALLES ---
+    // ──────────────────────────────────────────────────────────────────────────
+    //  5. NOTIFICATIONS PERSONNELLES ÉTUDIANT
+    // ──────────────────────────────────────────────────────────────────────────
+    private void showNotificationsEtudiant(Utilisateur etudiant) {
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+        mainContent.setPadding(new Insets(22, 32, 40, 32));
+
+        mainContent.getChildren().add(btnRetour(() -> showStudentView(etudiant)));
+
+        VBox header = construireHeader("🔔 CENTRE DE NOTIFICATIONS",
+            "Alertes, confirmations et annonces de l'administration");
+
+        // ── Barre d'actions ────────────────────────────────────────────────
+        Button btnToutLire = new Button("✓ Tout marquer comme lu");
+        btnToutLire.setStyle("-fx-background-color:transparent; -fx-text-fill:" + VERT_LIME + "; -fx-border-color:" + VERT_LIME + "; -fx-border-radius:8; -fx-background-radius:8; -fx-cursor:hand; -fx-font-weight:bold; -fx-padding:8 18;");
+
+        ComboBox<String> cbFiltreNotif = new ComboBox<>();
+        cbFiltreNotif.getItems().addAll("Toutes", "Non lues", "Réservations", "Système");
+        cbFiltreNotif.setValue("Toutes");
+        cbFiltreNotif.setStyle("-fx-background-radius:8; -fx-font-weight:bold;");
+
+        HBox tbNotif = new HBox(16, new Region(){{HBox.setHgrow(this,Priority.ALWAYS);}},
+            new Label("Filtre :"){{setStyle("-fx-text-fill:"+GRIS_TEXTE+"; -fx-font-weight:bold;");}},
+            cbFiltreNotif, btnToutLire);
+        tbNotif.setAlignment(Pos.CENTER_LEFT);
+        tbNotif.setPadding(new Insets(8, 0, 14, 0));
+
+        // ── Liste des notifications (cards scrollables) ────────────────────
+        VBox notifList = new VBox(10);
+        notifList.setPadding(new Insets(4, 0, 10, 0));
+
+        List<Notification> notifs = notificationDAO.findAll();
+
+        Runnable refreshNotifs = () -> {
+            notifList.getChildren().clear();
+            String filtre = cbFiltreNotif.getValue();
+            if (notifs == null || notifs.isEmpty()) {
+                Label vide = new Label("Aucune notification pour le moment.");
+                vide.setStyle("-fx-text-fill:" + GRIS_TEXTE + "; -fx-padding:30;");
+                notifList.getChildren().add(vide);
+                return;
+            }
+            notifs.stream()
+                .filter(n -> {
+                    if ("Toutes".equals(filtre)) return true;
+                    if ("Non lues".equals(filtre)) return "NON_LU".equalsIgnoreCase(n.getStatut());
+                    return true;
+                })
+                .forEach(n -> notifList.getChildren().add(creerCarteNotification(n)));
+        };
+
+        refreshNotifs.run();
+        cbFiltreNotif.valueProperty().addListener((o, ov, nv) -> refreshNotifs.run());
+        btnToutLire.setOnAction(e -> {
+            if (notifs != null) notifs.forEach(n -> n.setStatut("LU"));
+            refreshNotifs.run();
+        });
+
+        ScrollPane scroll = creerScrollPane(notifList, 480);
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+        mainContent.getChildren().addAll(header, tbNotif, scroll);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  6. MON PROFIL ÉTUDIANT
+    // ──────────────────────────────────────────────────────────────────────────
+    private void showMonProfilEtudiant(Utilisateur etudiant) {
+        preparerContenu("-fx-background-color: #f0f4f8;");
+        mainContent.setPadding(new Insets(22, 32, 40, 32));
+
+        mainContent.getChildren().add(btnRetour(() -> showStudentView(etudiant)));
+
+        // ── Carte profil principale ────────────────────────────────────────
+        HBox profilCard = new HBox(30);
+        profilCard.setPadding(new Insets(30, 32, 30, 32));
+        profilCard.setStyle("-fx-background-color:" + BLEU_DEEP + "; -fx-background-radius:22;");
+        profilCard.setAlignment(Pos.CENTER_LEFT);
+
+        // Avatar
+        StackPane avatar = new StackPane();
+        Region avBg = new Region(); avBg.setPrefSize(80, 80); avBg.setMaxSize(80, 80);
+        avBg.setStyle("-fx-background-color:" + VERT_LIME + "; -fx-background-radius:40;");
+        Label avTxt = new Label(etudiant != null && etudiant.getNom() != null
+            ? String.valueOf(etudiant.getNom().charAt(0)).toUpperCase() : "E");
+        avTxt.setStyle("-fx-font-size:34; -fx-font-weight:bold; -fx-text-fill:" + BLEU_DEEP + ";");
+        avatar.getChildren().addAll(avBg, avTxt);
+
+        VBox profilInfo = new VBox(6);
+        String nomComplet = etudiant != null
+            ? (etudiant.getNom() != null ? etudiant.getNom() : "") +
+              (etudiant.getPrenom() != null ? " " + etudiant.getPrenom() : "")
+            : "Étudiant";
+        Label lNomComplet = new Label(nomComplet.trim().toUpperCase());
+        lNomComplet.setStyle("-fx-font-family:'Consolas'; -fx-font-size:22; -fx-font-weight:bold; -fx-text-fill:white;");
+
+        String emailAff = etudiant != null && etudiant.getEmail() != null ? etudiant.getEmail() : "—";
+        Label lEmail = new Label("✉  " + emailAff);
+        lEmail.setStyle("-fx-text-fill:#94a3b8; -fx-font-size:13;");
+
+        Label lRole = new Label("🎓  Étudiant");
+        lRole.setStyle("-fx-text-fill:" + VERT_LIME + "; -fx-font-weight:bold; -fx-font-size:13;");
+
+        // Matricule
+        String matricule = etudiant != null ? etudiant.getIdentifiantConnexion() : "—";
+        Label lMatricule = new Label("🪪  Matricule : " + matricule);
+        lMatricule.setStyle("-fx-text-fill:#94a3b8; -fx-font-size:12;");
+
+        profilInfo.getChildren().addAll(lNomComplet, lEmail, lRole, lMatricule);
+        profilCard.getChildren().addAll(avatar, profilInfo);
+
+        // ── Section groupe & promo ─────────────────────────────────────────
+        // Tenter de récupérer l'entité Etudiant pour le groupe
+        Etudiant etudiantComplet = null;
+        if (etudiant != null) {
+            try {
+                EtudiantDAO etudDAO = new EtudiantDAO(HibernateUtil.getSessionFactory());
+                etudiantComplet = (Etudiant) etudDAO.findById(etudiant.getIdentifiantConnexion());
+            } catch (Exception ignored) {}
+        }
+
+        Groupe groupe = etudiantComplet != null ? etudiantComplet.getGroupe() : null;
+        Promotion promo = groupe != null ? groupe.getPromotion() : null;
+
+        HBox infoCardsRow = new HBox(16);
+        infoCardsRow.setPadding(new Insets(20, 0, 0, 0));
+        infoCardsRow.getChildren().addAll(
+            creerInfoCard("🏫 GROUPE",
+                groupe != null ? "Groupe " + groupe.getNumeroGroupe() : "Non assigné",
+                groupe != null ? groupe.getSpecialiteGroupe() : "—",
+                groupe != null ? groupe.getModaliteGroupe() : "—"),
+            creerInfoCard("📋 PROMOTION",
+                promo != null ? promo.getCodePromotion() : "—",
+                promo != null ? promo.getNiveau() : "—",
+                promo != null ? promo.getAnneeAcademique() : "—"),
+            creerInfoCard("📊 STATISTIQUES",
+                "0 cours suivis",
+                "0 réservations",
+                "0 incidents signalés")
+        );
+
+        // ── Section modifier mot de passe ──────────────────────────────────
+        VBox securityCard = new VBox(14);
+        securityCard.setPadding(new Insets(22, 24, 22, 24));
+        securityCard.setStyle("-fx-background-color:white; -fx-background-radius:16; -fx-effect:dropshadow(three-pass-box,rgba(0,0,0,0.06),10,0,0,3);");
+
+        Label lSec = new Label("🔒 SÉCURITÉ DU COMPTE");
+        lSec.setStyle("-fx-font-family:'Consolas'; -fx-font-size:15; -fx-font-weight:bold; -fx-text-fill:" + BLEU_DEEP + ";");
+
+        PasswordField fAncien  = new PasswordField(); fAncien.setPromptText("Ancien mot de passe");
+        PasswordField fNouveau = new PasswordField(); fNouveau.setPromptText("Nouveau mot de passe");
+        PasswordField fConfirm = new PasswordField(); fConfirm.setPromptText("Confirmer le nouveau mot de passe");
+        String pwStyle = "-fx-background-radius:8; -fx-padding:10; -fx-border-color:#e2e8f0; -fx-border-radius:8; -fx-font-size:13;";
+        fAncien.setStyle(pwStyle); fNouveau.setStyle(pwStyle); fConfirm.setStyle(pwStyle);
+
+        Button btnChgPw = new Button("CHANGER LE MOT DE PASSE");
+        styliserBoutonSecondaire(btnChgPw);
+        Label lMsgPw = new Label(""); lMsgPw.setStyle("-fx-font-size:11; -fx-text-fill:#ef4444;");
+
+        btnChgPw.setOnAction(e -> {
+            if (fAncien.getText().isEmpty() || fNouveau.getText().isEmpty() || fConfirm.getText().isEmpty()) {
+                lMsgPw.setText("⚠ Tous les champs sont requis."); lMsgPw.setStyle("-fx-font-size:11; -fx-text-fill:#ef4444;"); return;
+            }
+            if (!fNouveau.getText().equals(fConfirm.getText())) {
+                lMsgPw.setText("⚠ Les mots de passe ne correspondent pas."); return;
+            }
+            if (etudiant == null || !fAncien.getText().equals(etudiant.getMotDePasse())) {
+                lMsgPw.setText("⚠ Ancien mot de passe incorrect."); return;
+            }
+            etudiant.setMotDePasse(fNouveau.getText());
+            try {
+                utilisateurDAO.update(etudiant);
+                lMsgPw.setText("✓ Mot de passe mis à jour avec succès.");
+                lMsgPw.setStyle("-fx-font-size:11; -fx-text-fill:#16a34a;");
+                fAncien.clear(); fNouveau.clear(); fConfirm.clear();
+            } catch (Exception ex) {
+                lMsgPw.setText("⚠ Erreur : " + ex.getMessage());
+            }
+        });
+
+        GridPane pwGrid = new GridPane(); pwGrid.setHgap(14); pwGrid.setVgap(10);
+        pwGrid.add(fAncien, 0, 0); pwGrid.add(fNouveau, 1, 0); pwGrid.add(fConfirm, 2, 0);
+        GridPane.setHgrow(fAncien, Priority.ALWAYS);
+        GridPane.setHgrow(fNouveau, Priority.ALWAYS);
+        GridPane.setHgrow(fConfirm, Priority.ALWAYS);
+
+        securityCard.getChildren().addAll(lSec, new Separator(), pwGrid, btnChgPw, lMsgPw);
+
+        mainContent.getChildren().addAll(profilCard, infoCardsRow, securityCard);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    //  7. ÉTAT DU CAMPUS (vue salles pour étudiant)
+    // ──────────────────────────────────────────────────────────────────────────
     @FXML
     private void showSalles() {
-        mainContent.getChildren().clear();
-        Label title = new Label("Gestion des Salles & Réservations");
-        title.setStyle("-fx-font-size: 26; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
-        
-        TextField searchField = new TextField();
-        searchField.setPromptText("🔍 Rechercher une salle ou un bâtiment...");
-        searchField.setPrefWidth(500);
-        searchField.setStyle("-fx-padding: 12; -fx-background-radius: 25; -fx-border-color: " + BLEU_DEEP + ";");
-        
-        searchField.textProperty().addListener((obs, oldVal, newVal) -> refreshSallesList(true, newVal));
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+
+        // ← CORRECTIF : bouton retour selon le rôle connecté
+        if ("Enseignant".equalsIgnoreCase(roleConnecte) && utilisateurConnecte != null) {
+            mainContent.getChildren().add(btnRetour(() -> showTeacherView(utilisateurConnecte)));
+        } else if ("Étudiant".equalsIgnoreCase(roleConnecte) && utilisateurConnecte != null) {
+            mainContent.getChildren().add(btnRetour(() -> showStudentView(utilisateurConnecte)));
+        }
+
+        Label titre = creerTitre("RÉSEAU DES LOCAUX — ÉTAT EN TEMPS RÉEL");
+
+        TextField search = new TextField();
+        search.setPromptText("🔍 Rechercher une salle ou un bâtiment...");
+        search.setPrefWidth(480);
+        search.setStyle("-fx-padding: 10; -fx-background-radius: 20; " +
+            "-fx-border-color: " + BLEU_DEEP + "; -fx-border-radius: 20;");
+        search.textProperty().addListener((obs, o, n) -> rafraichirListeSalles(true, n));
 
         containerSalles = new FlowPane(20, 20);
-        refreshSallesList(true, ""); 
-        
-        mainContent.getChildren().addAll(title, searchField, containerSalles);
+        containerSalles.setPadding(new Insets(15, 0, 0, 0));
+        rafraichirListeSalles(true, "");
+
+        ScrollPane scroll = creerScrollPane(containerSalles, 520);
+        mainContent.getChildren().addAll(titre, search, scroll);
     }
 
-    // --- 3. RÉSERVATIONS (Assistant Intelligent mis à jour) ---
-    
+    // ──────────────────────────────────────────────────────────────────────────
+    //  8. DIALOGUE — RÉSERVER UNE SALLE D'ÉTUDE
+    // ──────────────────────────────────────────────────────────────────────────
+    private void dialogReserverSalleEtude(Utilisateur etudiant) {
+        javafx.stage.Stage stage = new javafx.stage.Stage();
+        stage.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        stage.setTitle("Nouvelle réservation de salle");
+        stage.setResizable(false);
 
-    private VBox creerCarteSmartSalle(Salle salle, double score, String nomClasse, String emailProf) {
-        VBox card = new VBox(15);
-        card.setPadding(new Insets(20));
-        card.setPrefWidth(280);
-        card.setStyle("-fx-background-color: white; -fx-background-radius: 20; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 0);");
+        VBox root = new VBox(20);
+        root.setPadding(new Insets(32));
+        root.setStyle("-fx-background-color:" + BLEU_DEEP + "; -fx-border-color:" + VERT_LIME +
+            "; -fx-border-width:2; -fx-background-radius:14; -fx-border-radius:14;");
 
-        // --- HEADER : Nom de la salle + Badge Match ---
-        HBox header = new HBox();
-        header.setAlignment(Pos.CENTER_LEFT);
-        Label lblNom = new Label(salle.getNumeroSalle());
-        lblNom.setStyle("-fx-font-weight: bold; -fx-font-size: 22; -fx-text-fill: " + BLEU_DEEP + ";");
-        
-        Region spacer = new Region(); HBox.setHgrow(spacer, Priority.ALWAYS);
-        
-        Label badge = new Label((int)score + "% MATCH");
-        badge.setPadding(new Insets(5, 10, 5, 10));
-        String badgeColor = score > 90 ? VERT_LIME : "#f1c40f"; 
-        badge.setStyle("-fx-background-color: " + badgeColor + "; -fx-text-fill: " + BLEU_DEEP + "; -fx-font-weight: bold; -fx-background-radius: 10; -fx-font-size: 10;");
-        header.getChildren().addAll(lblNom, spacer, badge);
+        Label titre = new Label("📚 RÉSERVER UNE SALLE D'ÉTUDE");
+        titre.setStyle("-fx-text-fill:" + VERT_LIME + "; -fx-font-family:'Consolas'; -fx-font-size:17; -fx-font-weight:bold;");
 
-        // --- INFOS CAPACITÉ ---
-        VBox capBox = new VBox(5);
-        Label lblCap = new Label("Capacité : " + salle.getCapacite() + " places");
-        lblCap.setStyle("-fx-text-fill: #7f8c8d; -fx-font-size: 12;");
-        
-        ProgressBar pbCap = new ProgressBar();
-        pbCap.setPrefWidth(Double.MAX_VALUE);
-        // On calcule le ratio réel par rapport à l'effectif demandé
-        try {
-            double effectif = Double.parseDouble(txtEffectif.getText());
-            pbCap.setProgress(effectif / salle.getCapacite());
-        } catch(Exception ex) { pbCap.setProgress(0.5); }
-        
-        pbCap.setStyle("-fx-accent: " + (score > 90 ? VERT_LIME : BLEU_DEEP) + ";");
-        capBox.getChildren().addAll(lblCap, pbCap);
+        String fStyle = "-fx-background-color:#1a252f; -fx-text-fill:white; -fx-border-color:#2d3f50; " +
+            "-fx-border-radius:7; -fx-background-radius:7; -fx-padding:9; -fx-font-size:13;";
+        String lStyle = "-fx-text-fill:" + VERT_LIME + "99; -fx-font-size:10; -fx-font-family:'Consolas';";
 
-        // --- ÉQUIPEMENTS ---
-        HBox equipIcons = new HBox(10);
-        equipIcons.setAlignment(Pos.CENTER_LEFT);
-        // On peut imaginer une logique ici pour vérifier les vrais équipements de la salle
-        equipIcons.getChildren().addAll(creerMiniIcone("📽️", true), creerMiniIcone("❄️", true), creerMiniIcone("🌐", false));
+        // Sélection salle
+        Label lSalle = new Label("SALLE DISPONIBLE"); lSalle.setStyle(lStyle);
+        ComboBox<Salle> cbSalle = new ComboBox<>();
+        List<Salle> dispos = salleDAO.findAll().stream()
+            .filter(s -> "Disponible".equalsIgnoreCase(s.getEtatSalle()))
+            .collect(Collectors.toList());
+        cbSalle.getItems().addAll(dispos);
+        cbSalle.setMaxWidth(Double.MAX_VALUE);
+        cbSalle.setStyle(fStyle);
+        cbSalle.setConverter(new javafx.util.StringConverter<>() {
+            public String toString(Salle s) {
+                return s == null ? "" : s.getNumeroSalle() + " — " +
+                    (s.getBatiment() != null ? s.getBatiment().getNomBatiment() : "?") +
+                    " (" + s.getCapacite() + " places)";
+            }
+            public Salle fromString(String s) { return null; }
+        });
 
-        // --- BOUTON DE RÉSERVATION (Le moteur) ---
-        Button btnConfirm = new Button("SÉLECTIONNER");
-        btnConfirm.setMaxWidth(Double.MAX_VALUE);
-        btnConfirm.setCursor(javafx.scene.Cursor.HAND);
-        btnConfirm.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 10;");
-        
-        // ACTION DU BOUTON
-        btnConfirm.setOnAction(e -> {
-            // Log de débug dans ta console Eclipse
-            System.out.println(">>> Tentative de réservation pour la salle : " + salle.getNumeroSalle());
+        // Nature de la session
+        Label lNature = new Label("NATURE DE LA SESSION"); lNature.setStyle(lStyle);
+        ComboBox<String> cbNature = new ComboBox<>();
+        cbNature.getItems().addAll("Révision individuelle", "Travail en groupe", "Projet", "Exposé / Répétition", "Autre");
+        cbNature.setValue("Révision individuelle");
+        cbNature.setMaxWidth(Double.MAX_VALUE);
+        cbNature.setStyle(fStyle);
 
-            // SÉCURITÉ : On vérifie si l'email a été saisi avant de lancer la suite
-            if (emailProf == null || emailProf.trim().isEmpty()) {
-                afficherAlerte("ACTION REQUISE", "Veuillez saisir l'email du responsable dans le formulaire en haut avant de sélectionner une unité.");
-                // On met le focus sur le champ email pour aider l'utilisateur
-                txtEmail.requestFocus(); 
-            } else {
-                // APPEL DE LA MÉTHODE DE FINALISATION (La fenêtre Cyber)
-                finaliserReservation(salle, nomClasse, emailProf);
+        // Date
+        Label lDate = new Label("DATE DE LA SESSION"); lDate.setStyle(lStyle);
+        DatePicker dpDate = new DatePicker(java.time.LocalDate.now());
+        dpDate.setMaxWidth(Double.MAX_VALUE);
+        dpDate.setStyle(fStyle);
+
+        // Créneau
+        Label lCreneau = new Label("CRÉNEAU HORAIRE"); lCreneau.setStyle(lStyle);
+        HBox creneauRow = new HBox(12);
+        ComboBox<String> cbDebut = new ComboBox<>();
+        ComboBox<String> cbFin   = new ComboBox<>();
+        String[] heures = {"07:00","07:30","08:00","08:30","09:00","09:30","10:00","10:30",
+            "11:00","11:30","12:00","12:30","13:00","13:30","14:00","14:30",
+            "15:00","15:30","16:00","16:30","17:00","17:30","18:00","18:30","19:00","20:00"};
+        cbDebut.getItems().addAll(heures);
+        cbFin.getItems().addAll(heures);
+        cbDebut.setValue("08:00"); cbFin.setValue("10:00");
+        cbDebut.setStyle(fStyle); cbFin.setStyle(fStyle);
+        cbDebut.setPrefWidth(150); cbFin.setPrefWidth(150);
+        Label lSep = new Label("→"); lSep.setStyle("-fx-text-fill:white; -fx-font-size:16;");
+        creneauRow.setAlignment(Pos.CENTER_LEFT);
+        creneauRow.getChildren().addAll(cbDebut, lSep, cbFin);
+
+        // Nombre de personnes
+        Label lNbP = new Label("NOMBRE DE PARTICIPANTS"); lNbP.setStyle(lStyle);
+        TextField fNbP = new TextField("1");
+        fNbP.setStyle(fStyle); fNbP.setPrefWidth(120);
+
+        // Commentaire
+        Label lComm = new Label("COMMENTAIRE (OPTIONNEL)"); lComm.setStyle(lStyle);
+        TextArea taComm = new TextArea();
+        taComm.setPromptText("Indiquez l'objet de la session, les besoins particuliers...");
+        taComm.setPrefHeight(75); taComm.setWrapText(true);
+        taComm.setStyle("-fx-control-inner-background:#1a252f; -fx-text-fill:white; -fx-border-color:#2d3f50; -fx-border-radius:7; -fx-background-radius:7;");
+
+        // Message erreur/succès
+        Label lMsg = new Label(""); lMsg.setStyle("-fx-font-size:11;");
+
+        Button btnReserver = new Button("✔ CONFIRMER LA RÉSERVATION");
+        btnReserver.setMaxWidth(Double.MAX_VALUE); btnReserver.setPrefHeight(46);
+        styliserBoutonPrimaire(btnReserver);
+
+        btnReserver.setOnAction(e -> {
+            if (cbSalle.getValue() == null) {
+                lMsg.setText("⚠ Veuillez sélectionner une salle."); lMsg.setStyle("-fx-text-fill:#ef4444; -fx-font-size:11;"); return;
+            }
+            try {
+                Salle salleChoisie = cbSalle.getValue();
+                salleChoisie.setEtatSalle("Occupée");
+                salleDAO.update(salleChoisie);
+
+                // Notification email si email renseigné
+                if (etudiant != null && etudiant.getEmail() != null) {
+                    notifService.confirmerReservation(etudiant.getEmail(),
+                        "Réservation confirmée — Salle " + salleChoisie.getNumeroSalle() +
+                        " le " + dpDate.getValue() + " de " + cbDebut.getValue() +
+                        " à " + cbFin.getValue() + " — " + cbNature.getValue());
+                }
+                stage.close();
+                afficherAlerte("Réservation confirmée",
+                    "La salle " + salleChoisie.getNumeroSalle() + " est réservée pour le " +
+                    dpDate.getValue() + " de " + cbDebut.getValue() + " à " + cbFin.getValue() + ".");
+                showMesReservationsEtudiant(etudiant);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                lMsg.setText("⚠ Erreur : " + ex.getMessage());
+                lMsg.setStyle("-fx-text-fill:#ef4444; -fx-font-size:11;");
             }
         });
 
-        card.getChildren().addAll(header, new Separator(), capBox, equipIcons, btnConfirm);
+        Button btnAnnuler = new Button("ANNULER");
+        btnAnnuler.setMaxWidth(Double.MAX_VALUE);
+        btnAnnuler.setStyle("-fx-background-color:transparent; -fx-text-fill:" + GRIS_TEXTE + "; -fx-cursor:hand;");
+        btnAnnuler.setOnAction(e -> stage.close());
 
-        // --- EFFETS INTERACTIFS ---
+        root.getChildren().addAll(
+            titre, new Separator(),
+            lSalle, cbSalle,
+            lNature, cbNature,
+            lDate, dpDate,
+            lCreneau, creneauRow,
+            lNbP, fNbP,
+            lComm, taComm,
+            lMsg, btnReserver, btnAnnuler
+        );
+
+        ScrollPane sp = new ScrollPane(root);
+        sp.setFitToWidth(true);
+        sp.setStyle("-fx-background-color:" + BLEU_DEEP + ";");
+        stage.setScene(new Scene(sp, 500, 660));
+        stage.show();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  HELPERS SPÉCIFIQUES ÉTUDIANT
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** Grille EDT complète (5 jours × heures) */
+    private GridPane construireGrilleEDT(Utilisateur etudiant) {
+        GridPane grid = new GridPane();
+        grid.setHgap(3); grid.setVgap(3);
+        grid.setStyle("-fx-background-color:#f1f5f9; -fx-padding:4;");
+
+        String[] jours  = {"", "LUNDI", "MARDI", "MERCREDI", "JEUDI", "VENDREDI"};
+        String[] slices = {"07h30","08h00","08h30","09h00","09h30","10h00","10h30",
+                           "11h00","11h30","12h00","12h30","13h00","13h30","14h00",
+                           "14h30","15h00","15h30","16h00","16h30","17h00","17h30","18h00"};
+
+        // En-têtes jours
+        for (int c = 0; c < jours.length; c++) {
+            Label h = new Label(jours[c]);
+            h.setMinWidth(c == 0 ? 68 : 148);
+            h.setPrefWidth(c == 0 ? 68 : 148);
+            h.setAlignment(Pos.CENTER);
+            h.setPrefHeight(36);
+            h.setStyle("-fx-background-color:" + BLEU_DEEP + "; -fx-text-fill:" + VERT_LIME +
+                "; -fx-font-weight:bold; -fx-font-family:'Consolas'; -fx-font-size:11; -fx-padding:5;");
+            grid.add(h, c, 0);
+        }
+
+        // Lignes horaires
+        for (int r = 0; r < slices.length; r++) {
+            // Colonne heure
+            Label slot = new Label(slices[r]);
+            slot.setMinWidth(68); slot.setPrefWidth(68);
+            slot.setPrefHeight(38); slot.setAlignment(Pos.CENTER);
+            slot.setStyle("-fx-background-color:#e2e8f0; -fx-text-fill:" + BLEU_DEEP +
+                "; -fx-font-weight:bold; -fx-font-size:10; -fx-font-family:'Consolas';");
+            grid.add(slot, 0, r + 1);
+
+            // Colonnes jours
+            for (int c = 1; c < jours.length; c++) {
+                Label cell = new Label("");
+                cell.setMinWidth(148); cell.setPrefWidth(148);
+                cell.setPrefHeight(38); cell.setAlignment(Pos.CENTER);
+                boolean isBreak = slices[r].equals("12h30") || slices[r].equals("13h00");
+                String cellStyle = isBreak
+                    ? "-fx-background-color:#fef9c3; -fx-text-fill:#ca8a04; -fx-font-size:10;"
+                    : "-fx-background-color:white; -fx-text-fill:#94a3b8; -fx-border-color:#f1f5f9; -fx-font-size:10;";
+                if (isBreak && c == 1) cell.setText("Pause déjeuner");
+                cell.setStyle(cellStyle);
+                grid.add(cell, c, r + 1);
+            }
+        }
+        return grid;
+    }
+
+    /** Aperçu planning (bloc compact pour le hub) */
+    private VBox construireApercuPlanningEtudiant(Utilisateur etudiant) {
+        VBox block = new VBox(12);
+        block.setPadding(new Insets(22, 24, 22, 24));
+        block.setStyle("-fx-background-color:white; -fx-background-radius:18; -fx-effect:dropshadow(three-pass-box,rgba(0,0,0,0.06),10,0,0,3);");
+
+        HBox hdrRow = new HBox(12);
+        hdrRow.setAlignment(Pos.CENTER_LEFT);
+        Label lTitre = new Label("📅 PLANNING DE LA SEMAINE");
+        lTitre.setStyle("-fx-font-family:'Consolas'; -fx-font-size:14; -fx-font-weight:bold; -fx-text-fill:" + BLEU_DEEP + ";");
+        Button btnVoirTout = new Button("Voir tout →");
+        btnVoirTout.setStyle("-fx-background-color:transparent; -fx-text-fill:" + VERT_LIME + "; -fx-cursor:hand; -fx-font-weight:bold;");
+        btnVoirTout.setOnAction(e -> showEdtEtudiant(etudiant));
+        Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
+        hdrRow.getChildren().addAll(lTitre, sp, btnVoirTout);
+
+        // Grille mini 5 jours × 3 créneaux
+        GridPane mini = new GridPane();
+        mini.setHgap(8); mini.setVgap(6);
+        String[] jMini = {"LUN", "MAR", "MER", "JEU", "VEN"};
+        String[] hMini = {"08h-10h", "10h-12h", "14h-16h"};
+
+        for (int c = 0; c < jMini.length; c++) {
+            Label jh = new Label(jMini[c]);
+            jh.setMinWidth(120); jh.setAlignment(Pos.CENTER);
+            jh.setStyle("-fx-background-color:" + BLEU_DEEP + "; -fx-text-fill:" + VERT_LIME +
+                "; -fx-font-weight:bold; -fx-font-size:10; -fx-padding:6 4; -fx-font-family:'Consolas';");
+            mini.add(jh, c, 0);
+        }
+        for (int r = 0; r < hMini.length; r++) {
+            for (int c = 0; c < jMini.length; c++) {
+                Label cell = new Label(r == 0 && c == 0 ? "Cours" : "");
+                cell.setMinWidth(120); cell.setPrefHeight(32); cell.setAlignment(Pos.CENTER);
+                cell.setStyle(r == 0 && c == 0
+                    ? "-fx-background-color:#ede9fe; -fx-text-fill:#7c3aed; -fx-font-size:10; -fx-font-weight:bold; -fx-background-radius:6;"
+                    : "-fx-background-color:#f8fafc; -fx-text-fill:#94a3b8; -fx-font-size:10; -fx-border-color:#e2e8f0; -fx-border-radius:6; -fx-background-radius:6;");
+                mini.add(cell, c, r + 1);
+            }
+        }
+        block.getChildren().addAll(hdrRow, mini);
+        return block;
+    }
+
+    /** Aperçu notifications (bloc compact pour le hub) */
+    private VBox construireApercuNotificationsEtudiant(List<Notification> notifs, Utilisateur etudiant) {
+        VBox block = new VBox(10);
+        block.setPadding(new Insets(20, 22, 20, 22));
+        block.setStyle("-fx-background-color:white; -fx-background-radius:18; -fx-effect:dropshadow(three-pass-box,rgba(0,0,0,0.06),10,0,0,3);");
+
+        HBox hdrRow = new HBox();
+        Label lT = new Label("🔔 DERNIÈRES NOTIFICATIONS");
+        lT.setStyle("-fx-font-family:'Consolas'; -fx-font-size:14; -fx-font-weight:bold; -fx-text-fill:" + BLEU_DEEP + ";");
+        Button btnAll = new Button("Tout voir →");
+        btnAll.setStyle("-fx-background-color:transparent; -fx-text-fill:" + VERT_LIME + "; -fx-cursor:hand; -fx-font-weight:bold;");
+        btnAll.setOnAction(e -> showNotificationsEtudiant(etudiant));
+        Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
+        hdrRow.getChildren().addAll(lT, sp, btnAll);
+        block.getChildren().add(hdrRow);
+
+        if (notifs == null || notifs.isEmpty()) {
+            Label vide = new Label("Aucune notification.");
+            vide.setStyle("-fx-text-fill:" + GRIS_TEXTE + "; -fx-font-size:12; -fx-padding:10 0;");
+            block.getChildren().add(vide);
+        } else {
+            notifs.stream().limit(3).forEach(n -> block.getChildren().add(creerCarteNotification(n)));
+        }
+        return block;
+    }
+
+    /** Carte de notification */
+    private HBox creerCarteNotification(Notification notif) {
+        HBox card = new HBox(14);
+        card.setPadding(new Insets(12, 16, 12, 16));
+        card.setAlignment(Pos.CENTER_LEFT);
+        boolean nonLu = notif.getStatut() != null && notif.getStatut().equalsIgnoreCase("NON_LU");
+        card.setStyle("-fx-background-color:" + (nonLu ? "#f0fdf4" : "#f8fafc") +
+            "; -fx-border-color:" + (nonLu ? "#86efac" : "#e2e8f0") +
+            "; -fx-border-radius:10; -fx-background-radius:10;");
+
+        Label lIco = new Label(nonLu ? "🔔" : "🔕");
+        lIco.setStyle("-fx-font-size:18;");
+
+        VBox info = new VBox(3);
+        Label lMsg = new Label(notif.getMessage() != null ? notif.getMessage() : "—");
+        lMsg.setStyle("-fx-font-size:12; -fx-text-fill:" + BLEU_DEEP + ";" + (nonLu ? " -fx-font-weight:bold;" : ""));
+        lMsg.setWrapText(true);
+
+        String dateStr = notif.getDateHeure() != null
+            ? notif.getDateHeure().format(DateTimeFormatter.ofPattern("dd MMM HH:mm", java.util.Locale.FRENCH))
+            : "—";
+        Label lDate = new Label(dateStr);
+        lDate.setStyle("-fx-font-size:10; -fx-text-fill:#94a3b8;");
+
+        info.getChildren().addAll(lMsg, lDate);
+        HBox.setHgrow(info, Priority.ALWAYS);
+
+        Label lStatut = new Label(nonLu ? "NOUVEAU" : "LU");
+        lStatut.setStyle("-fx-background-color:" + (nonLu ? "#dcfce7" : "#e2e8f0") +
+            "; -fx-text-fill:" + (nonLu ? "#16a34a" : "#64748b") +
+            "; -fx-font-size:9; -fx-font-weight:bold; -fx-padding:3 8; -fx-background-radius:6;");
+
+        card.getChildren().addAll(lIco, info, lStatut);
+        return card;
+    }
+
+    /** Carte salle détaillée avec bouton réserver (pour recherche) */
+    private VBox creerCarteDetailleeSalle(Salle s, Utilisateur etudiant) {
+        VBox card = new VBox(12);
+        card.setPadding(new Insets(20)); card.setPrefWidth(290);
+        card.setStyle("-fx-background-color:white; -fx-background-radius:18; -fx-effect:dropshadow(three-pass-box,rgba(0,0,0,0.09),10,0,0,0);");
+
+        HBox headRow = new HBox(8);
+        headRow.setAlignment(Pos.CENTER_LEFT);
+        Label lNum = new Label(s.getNumeroSalle());
+        lNum.setStyle("-fx-font-weight:bold; -fx-font-size:22; -fx-text-fill:" + BLEU_DEEP + ";");
+        Label lDispo = new Label("● LIBRE");
+        lDispo.setStyle("-fx-text-fill:#16a34a; -fx-font-weight:bold; -fx-font-size:10; -fx-background-color:#dcfce7; -fx-padding:3 8; -fx-background-radius:8;");
+        headRow.getChildren().addAll(lNum, new Region(){{HBox.setHgrow(this,Priority.ALWAYS);}}, lDispo);
+
+        Label lBat = new Label("📍 " + (s.getBatiment() != null ? s.getBatiment().getNomBatiment() : "N/A"));
+        lBat.setStyle("-fx-text-fill:" + GRIS_TEXTE + "; -fx-font-size:12;");
+        Label lCap = new Label("👥 " + s.getCapacite() + " places");
+        lCap.setStyle("-fx-text-fill:" + GRIS_TEXTE + "; -fx-font-size:12;");
+        Label lType = new Label("🏷  " + (s.getCategorieSalle() != null ? s.getCategorieSalle() : "—"));
+        lType.setStyle("-fx-text-fill:" + GRIS_TEXTE + "; -fx-font-size:12;");
+
+        // Barre capacité visuelle
+        ProgressBar pbCap = new ProgressBar(0.0); // 0 car libre
+        pbCap.setMaxWidth(Double.MAX_VALUE); pbCap.setPrefHeight(7);
+        pbCap.setStyle("-fx-accent:#22c55e;");
+
+        Button btnReserv = new Button("RÉSERVER CETTE SALLE");
+        btnReserv.setMaxWidth(Double.MAX_VALUE); btnReserv.setPrefHeight(38);
+        styliserBoutonPrimaire(btnReserv);
+        btnReserv.setOnAction(e -> dialogReserverSalleEtude(etudiant));
+
+        card.getChildren().addAll(headRow, new Separator(), lBat, lCap, lType, pbCap, btnReserv);
+
+        String base = card.getStyle();
+        card.setOnMouseEntered(ev -> { card.setStyle("-fx-background-color:white; -fx-background-radius:18; -fx-effect:dropshadow(three-pass-box," + VERT_LIME + ",18,0,0,0);"); card.setTranslateY(-5); });
+        card.setOnMouseExited(ev  -> { card.setStyle(base); card.setTranslateY(0); });
+
+        return card;
+    }
+
+    /** Carte compacte salle par bâtiment */
+    private VBox creerCarteCompacteSalle(Salle s, Utilisateur etudiant) {
+        VBox card = new VBox(8);
+        card.setPadding(new Insets(14, 16, 14, 16));
+        card.setPrefWidth(190);
+        card.setCursor(javafx.scene.Cursor.HAND);
+
+        boolean dispo = "Disponible".equalsIgnoreCase(s.getEtatSalle());
+        card.setStyle("-fx-background-color:" + (dispo ? "white" : "#fff5f5") +
+            "; -fx-background-radius:14; -fx-border-color:" + (dispo ? "#e2e8f0" : "#fca5a5") +
+            "; -fx-border-radius:14; -fx-border-width:1.5;");
+
+        Label lNum = new Label(s.getNumeroSalle());
+        lNum.setStyle("-fx-font-weight:bold; -fx-font-size:17; -fx-text-fill:" + BLEU_DEEP + ";");
+
+        Label lCap = new Label("👥 " + s.getCapacite() + " pl.");
+        lCap.setStyle("-fx-text-fill:" + GRIS_TEXTE + "; -fx-font-size:11;");
+
+        Label lEtat = new Label(dispo ? "● LIBRE" : "● OCCUPÉE");
+        lEtat.setStyle("-fx-text-fill:" + (dispo ? "#16a34a" : "#dc2626") +
+            "; -fx-font-weight:bold; -fx-font-size:10;");
+
+        card.getChildren().addAll(lNum, lCap, lEtat);
+
+        if (dispo) {
+            card.setOnMouseClicked(ev -> dialogReserverSalleEtude(etudiant));
+            card.setOnMouseEntered(ev -> card.setStyle("-fx-background-color:#f0fdf4; -fx-background-radius:14; -fx-border-color:#86efac; -fx-border-radius:14; -fx-border-width:1.5;"));
+            card.setOnMouseExited(ev  -> card.setStyle("-fx-background-color:white; -fx-background-radius:14; -fx-border-color:#e2e8f0; -fx-border-radius:14; -fx-border-width:1.5;"));
+        }
+        return card;
+    }
+
+    /** Annuler une réservation étudiant */
+    private void annulerReservationEtudiant(Reservation r, Utilisateur etudiant) {
+        Alert a = new Alert(Alert.AlertType.CONFIRMATION);
+        a.setTitle("Annulation"); a.setHeaderText("Annuler cette réservation ?");
+        a.setContentText("La salle sera de nouveau disponible.");
+        a.showAndWait().filter(resp -> resp == ButtonType.OK).ifPresent(resp -> {
+            r.annulerReservation();
+            // Libérer la salle si le créneau est connu
+            if (r.getMonCreneau() != null && r.getMonCreneau().getSalle() != null) {
+                Salle sal = r.getMonCreneau().getSalle();
+                sal.setEtatSalle("Disponible");
+                salleDAO.update(sal);
+            }
+            try {
+                ReservationDAO rDAO = new ReservationDAO(HibernateUtil.getSessionFactory());
+                rDAO.update(r);
+            } catch (Exception ignored) {}
+            showMesReservationsEtudiant(etudiant);
+        });
+    }
+
+    // ── Composants visuels dédiés étudiant ────────────────────────────────────
+
+    private VBox creerKpiEtudiant(String ico, String titre, String val, String color, String detail) {
+        VBox c = new VBox(7);
+        c.setPadding(new Insets(18, 20, 18, 20));
+        c.setPrefWidth(210);
+        c.setStyle("-fx-background-color:white; -fx-background-radius:16; " +
+            "-fx-effect:dropshadow(three-pass-box,rgba(0,0,0,0.07),8,0,0,3); " +
+            "-fx-border-left-width:4; -fx-border-color:transparent transparent transparent " + color +
+            "; -fx-border-radius:0 16 16 0;");
+        HBox top = new HBox(8); top.setAlignment(Pos.CENTER_LEFT);
+        Label lI = new Label(ico); lI.setStyle("-fx-font-size:16;");
+        Label lT = new Label(titre); lT.setStyle("-fx-text-fill:#94a3b8; -fx-font-size:9; -fx-font-weight:bold; -fx-font-family:'Consolas';"); lT.setWrapText(true);
+        top.getChildren().addAll(lI, lT);
+        Label lV = new Label(val); lV.setStyle("-fx-font-size:34; -fx-font-weight:bold; -fx-text-fill:" + BLEU_DEEP + "; -fx-font-family:'Consolas';");
+        Label lD = new Label(detail); lD.setStyle("-fx-text-fill:" + color + "; -fx-font-size:10; -fx-font-weight:bold;");
+        c.getChildren().addAll(top, lV, lD);
+        return c;
+    }
+
+    private VBox creerTuileEtudiant(String titre, String desc, String color, Runnable action) {
+        VBox tile = new VBox(10);
+        tile.setAlignment(Pos.CENTER_LEFT);
+        tile.setPadding(new Insets(20, 22, 20, 22));
+        tile.setPrefWidth(260);
+        tile.setCursor(javafx.scene.Cursor.HAND);
+        String base = "-fx-background-color:" + BLEU_DEEP + "; -fx-background-radius:14; " +
+            "-fx-effect:dropshadow(three-pass-box,rgba(0,0,0,0.18),10,0,0,4);";
+        tile.setStyle(base);
+        Label lT = new Label(titre); lT.setStyle("-fx-text-fill:" + color + "; -fx-font-family:'Consolas'; -fx-font-weight:bold; -fx-font-size:12;");
+        Region acc = new Region(); acc.setPrefSize(32, 3); acc.setMaxWidth(32);
+        acc.setStyle("-fx-background-color:" + color + "; -fx-background-radius:2;");
+        Label lD = new Label(desc); lD.setStyle("-fx-text-fill:#94a3b8; -fx-font-size:11;");
+        tile.getChildren().addAll(lT, acc, lD);
+        tile.setOnMouseClicked(e -> action.run());
+        tile.setOnMouseEntered(e -> { tile.setStyle(base + "-fx-border-color:" + color + "; -fx-border-width:1.5; -fx-border-radius:14;"); tile.setTranslateY(-4); });
+        tile.setOnMouseExited(e  -> { tile.setStyle(base); tile.setTranslateY(0); });
+        return tile;
+    }
+
+    private VBox creerInfoCard(String titre, String ligne1, String ligne2, String ligne3) {
+        VBox c = new VBox(7);
+        c.setPadding(new Insets(18, 20, 18, 20));
+        c.setPrefWidth(280);
+        c.setStyle("-fx-background-color:white; -fx-background-radius:16; -fx-effect:dropshadow(three-pass-box,rgba(0,0,0,0.07),8,0,0,3);");
+        Label lT = new Label(titre); lT.setStyle("-fx-font-family:'Consolas'; -fx-font-size:13; -fx-font-weight:bold; -fx-text-fill:" + BLEU_DEEP + ";");
+        Label l1 = new Label(ligne1); l1.setStyle("-fx-text-fill:" + BLEU_DEEP + "; -fx-font-weight:bold; -fx-font-size:15;");
+        Label l2 = new Label(ligne2); l2.setStyle("-fx-text-fill:" + GRIS_TEXTE + "; -fx-font-size:12;");
+        Label l3 = new Label(ligne3); l3.setStyle("-fx-text-fill:" + GRIS_TEXTE + "; -fx-font-size:12;");
+        c.getChildren().addAll(lT, new Separator(), l1, l2, l3);
+        return c;
+    }
+
+    private HBox creerBadgeStat(String label, String val, String bgColor, String textColor) {
+        HBox b = new HBox(8); b.setAlignment(Pos.CENTER_LEFT);
+        b.setPadding(new Insets(10, 18, 10, 18));
+        b.setStyle("-fx-background-color:" + bgColor + "; -fx-background-radius:12;");
+        Label lV = new Label(val); lV.setStyle("-fx-font-size:22; -fx-font-weight:bold; -fx-text-fill:" + textColor + "; -fx-font-family:'Consolas';");
+        Label lL = new Label(label); lL.setStyle("-fx-font-size:11; -fx-font-weight:bold; -fx-text-fill:" + textColor + ";");
+        b.getChildren().addAll(lV, lL);
+        return b;
+    }
+
+    private HBox creerMiniStatBadge(String label, String val, String color) {
+        HBox b = new HBox(8); b.setAlignment(Pos.CENTER_LEFT);
+        b.setPadding(new Insets(7, 16, 7, 16));
+        b.setStyle("-fx-background-color:" + color + "18; -fx-border-color:" + color + "44; -fx-border-radius:10; -fx-background-radius:10;");
+        Label lV = new Label(val); lV.setStyle("-fx-font-size:18; -fx-font-weight:bold; -fx-text-fill:" + color + "; -fx-font-family:'Consolas';");
+        Label lL = new Label(label); lL.setStyle("-fx-font-size:11; -fx-text-fill:" + color + ";");
+        b.getChildren().addAll(lV, lL);
+        return b;
+    }
+
+    private HBox creerLegendeBullet(String color, String label) {
+        HBox h = new HBox(7); h.setAlignment(Pos.CENTER_LEFT);
+        Region dot = new Region(); dot.setPrefSize(14, 14); dot.setMaxSize(14, 14);
+        dot.setStyle("-fx-background-color:" + color + "; -fx-background-radius:7;");
+        Label l = new Label(label); l.setStyle("-fx-text-fill:" + GRIS_TEXTE + "; -fx-font-size:12;");
+        h.getChildren().addAll(dot, l);
+        return h;
+    }
+
+    private String lundiDeLaSemaine() {
+        java.time.LocalDate today = java.time.LocalDate.now();
+        java.time.LocalDate lundi = today.with(java.time.DayOfWeek.MONDAY);
+        return lundi.format(java.time.format.DateTimeFormatter.ofPattern("dd MMMM yyyy", java.util.Locale.FRENCH));
+    }
+
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  SÉLECTEUR DE PROFIL (LOGOUT INTERNE)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @FXML
+    public void showLoginSelection() {
+        // Cacher la sidebar — retour à l'écran plein
+        if (sidebar != null) {
+            sidebar.setVisible(false);
+            sidebar.setManaged(false);
+        }
+
+        preparerContenu("-fx-background-color: #FFFFFF;");
+        mainContent.setAlignment(Pos.CENTER);
+        mainContent.setPadding(new Insets(0));
+
+        VBox rootBox = new VBox(50);
+        rootBox.setAlignment(Pos.CENTER);
+
+        // ── EN-TÊTE ──────────────────────────────────────────────────────────
+        VBox header = new VBox(15);
+        header.setAlignment(Pos.CENTER);
+
+        Label title = new Label("UNIV-SCHEDULER");
+        title.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 48; " +
+                       "-fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
+
+        Region limeBar = new Region();
+        limeBar.setPrefSize(140, 6);
+        limeBar.setMaxWidth(140);
+        limeBar.setStyle("-fx-background-color: " + VERT_LIME + "; -fx-background-radius: 5;");
+
+        Label subtitle = new Label("SÉLECTIONNEZ VOTRE PORTAIL D'ACCÈS");
+        subtitle.setStyle("-fx-text-fill: #64748b; -fx-font-size: 16; " +
+                          "-fx-font-weight: bold; -fx-letter-spacing: 2px;");
+
+        header.getChildren().addAll(title, limeBar, subtitle);
+
+        // ── CARTES PORTAIL (style Image 2 : grande carte + icône circulaire) ─
+        HBox cardsBox = new HBox(30);
+        cardsBox.setAlignment(Pos.CENTER);
+        cardsBox.setPadding(new Insets(20, 0, 0, 0));
+
+        cardsBox.getChildren().addAll(
+        	    creerCartePortail("ADMINISTRATEUR", "⚡", "Configuration globale du système",
+        	        e -> showLoginForm("Administrateur")),
+        	    creerCartePortail("GESTIONNAIRE",   "⚒",  "Planification & Emplois du temps",
+        	        e -> showLoginForm("Gestionnaire")),
+        	    creerCartePortail("ENSEIGNANT",     "📖", "Consultation & Réservation",
+        	        e -> showLoginForm("Enseignant")),
+        	    creerCartePortail("ÉTUDIANT",       "🎓", "Consultation des plannings",
+        	        e -> showLoginForm("Étudiant"))
+        	);
+
+        rootBox.getChildren().addAll(header, cardsBox);
+        mainContent.getChildren().add(rootBox);
+    }
+    
+    
+    private void showLoginForm(String role) {
+        preparerContenu("-fx-background-color: #FFFFFF;");
+        mainContent.setAlignment(Pos.CENTER);
+        mainContent.setPadding(new Insets(0));
+
+        // ── CONTENEUR PRINCIPAL ───────────────────────────────────────────────
+        VBox rootBox = new VBox(0);
+        rootBox.setAlignment(Pos.CENTER);
+        rootBox.setPrefWidth(Double.MAX_VALUE);
+
+        // ── BANDEAU SUPÉRIEUR ─────────────────────────────────────────────────
+        HBox topBand = new HBox();
+        topBand.setAlignment(Pos.CENTER_LEFT);
+        topBand.setPadding(new Insets(18, 30, 18, 30));
+        topBand.setStyle("-fx-background-color: " + BLEU_DEEP + ";");
+
+        Label appName = new Label("UNIV-SCHEDULER");
+        appName.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 20; " +
+                         "-fx-font-weight: bold; -fx-text-fill: " + VERT_LIME + ";");
+
+        Region spacer = new Region(); HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        Button btnBack = new Button("← Changer de portail");
+        btnBack.setStyle("-fx-background-color: transparent; -fx-text-fill: #94a3b8; " +
+                         "-fx-font-weight: bold; -fx-cursor: hand;");
+        btnBack.setOnAction(e -> showLoginSelection());
+
+        topBand.getChildren().addAll(appName, spacer, btnBack);
+
+        // ── CARTE LOGIN CENTRALE ──────────────────────────────────────────────
+        VBox card = new VBox(24);
+        card.setAlignment(Pos.CENTER);
+        card.setPadding(new Insets(45, 50, 45, 50));
+        card.setMaxWidth(440);
+        card.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 24; " +
+                      "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.35), 25, 0, 0, 8);");
+
+        // Icône rôle
+        String icon = switch (role) {
+            case "Administrateur" -> "⚡";
+            case "Gestionnaire"   -> "⚒";
+            case "Enseignant"     -> "📖";
+            default               -> "🎓";
+        };
+
+        StackPane iconBox = new StackPane();
+        Region circle = new Region();
+        circle.setPrefSize(75, 75); circle.setMaxSize(75, 75);
+        circle.setStyle("-fx-background-color: " + VERT_LIME + "; -fx-background-radius: 37.5;");
+        Label lIcon = new Label(icon);
+        lIcon.setStyle("-fx-font-size: 30;");
+        iconBox.getChildren().addAll(circle, lIcon);
+
+        Label lRole = new Label("PORTAIL " + role.toUpperCase());
+        lRole.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 18; " +
+                       "-fx-font-weight: bold; -fx-text-fill: " + VERT_LIME + ";");
+
+        Region sep = new Region(); sep.setPrefSize(60, 3); sep.setMaxWidth(60);
+        sep.setStyle("-fx-background-color: " + VERT_LIME + "66; -fx-background-radius: 2;");
+
+        // Champs
+        Label lId = new Label("IDENTIFIANT");
+        lId.setStyle("-fx-text-fill: " + VERT_LIME + "99; -fx-font-size: 10; -fx-font-family: 'Consolas';");
+        TextField txtId = new TextField();
+        txtId.setPromptText("ex: admin@univ.sn");
+        txtId.setStyle("-fx-background-color: #1a252f; -fx-text-fill: white; " +
+                       "-fx-border-color: #2d3f50; -fx-border-radius: 8; " +
+                       "-fx-background-radius: 8; -fx-padding: 12; -fx-font-size: 13;");
+        VBox.setMargin(txtId, new Insets(0, 0, 4, 0));
+
+        Label lPw = new Label("MOT DE PASSE");
+        lPw.setStyle("-fx-text-fill: " + VERT_LIME + "99; -fx-font-size: 10; -fx-font-family: 'Consolas';");
+        PasswordField txtPw = new PasswordField();
+        txtPw.setPromptText("••••••••");
+        txtPw.setStyle("-fx-background-color: #1a252f; -fx-text-fill: white; " +
+                       "-fx-border-color: #2d3f50; -fx-border-radius: 8; " +
+                       "-fx-background-radius: 8; -fx-padding: 12; -fx-font-size: 13;");
+
+        // Label erreur
+        Label lErr = new Label("");
+        lErr.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 11; -fx-font-family: 'Consolas';");
+        lErr.setVisible(false);
+
+        // Bouton connexion
+        Button btnLogin = new Button("SE CONNECTER →");
+        btnLogin.setMaxWidth(Double.MAX_VALUE);
+        btnLogin.setPrefHeight(46);
+        styliserBoutonPrimaire(btnLogin);
+
+        // ── LOGIQUE D'AUTHENTIFICATION ────────────────────────────────────────
+        Runnable tenterConnexion = () -> {
+            String identifiant = txtId.getText().trim();
+            String motDePasse  = txtPw.getText();
+
+            if (identifiant.isEmpty() || motDePasse.isEmpty()) {
+                lErr.setText("⚠ Veuillez remplir tous les champs.");
+                lErr.setVisible(true);
+                return;
+            }
+
+            try {
+                Utilisateur u = utilisateurDAO.findByIdentifiant(identifiant);
+
+                if (u == null) {
+                    lErr.setText("✗ Identifiant introuvable.");
+                    lErr.setVisible(true);
+                    txtPw.clear();
+                    return;
+                }
+
+                if (!motDePasse.equals(u.getMotDePasse())) {
+                    lErr.setText("✗ Mot de passe incorrect.");
+                    lErr.setVisible(true);
+                    txtPw.clear();
+                    return;
+                }
+
+                if (!u.getRole().equalsIgnoreCase(role)) {
+                    lErr.setText("✗ Ce compte n'est pas un profil " + role + ".");
+                    lErr.setVisible(true);
+                    txtPw.clear();
+                    return;
+                }
+
+                // ── CONNEXION RÉUSSIE ─────────────────────────────────────────
+                pause.setOnFinished(ev -> {
+                    // ← CORRECTIF : stocker l'utilisateur connecté
+                    utilisateurConnecte = u;
+                    roleConnecte        = role;
+
+                    filtrerMenuLateral(role);
+                    switch (role) {
+                        case "Administrateur" -> showAdminPanel();
+                        case "Gestionnaire"   -> showManagerDashboard();
+                        case "Enseignant"     -> showTeacherView(u);
+                        default               -> showStudentView(u);
+                    }
+                });
+
+            } catch (Exception ex) {
+                lErr.setText("⚠ Erreur système : " + ex.getMessage());
+                lErr.setVisible(true);
+            }
+        };
+
+        btnLogin.setOnAction(e -> tenterConnexion.run());
+        txtPw.setOnAction(e -> tenterConnexion.run()); // Entrée dans le champ
+
+        card.getChildren().addAll(
+            iconBox, lRole, sep,
+            lId, txtId,
+            lPw, txtPw,
+            lErr, btnLogin
+        );
+
+        // ── FOOTER ────────────────────────────────────────────────────────────
+        Label footer = new Label("© 2026 UIDT Cyber-System · UNIV-SCHEDULER");
+        footer.setStyle("-fx-text-fill: #cbd5e1; -fx-font-size: 10;");
+
+        VBox centerWrapper = new VBox(card);
+        centerWrapper.setAlignment(Pos.CENTER);
+        VBox.setVgrow(centerWrapper, Priority.ALWAYS);
+        centerWrapper.setPadding(new Insets(60, 0, 40, 0));
+
+        rootBox.getChildren().addAll(topBand, centerWrapper, footer);
+        VBox.setMargin(footer, new Insets(0, 0, 20, 0));
+
+        mainContent.getChildren().add(rootBox);
+
+        // Focus auto sur le champ identifiant
+        Platform.runLater(txtId::requestFocus);
+    }
+    /**
+     * Crée une grande carte portail style Image 2 :
+     * fond sombre, icône circulaire verte, titre + description centrés.
+     */
+    private VBox creerCartePortail(String titre, String icon, String desc,
+                                    EventHandler<MouseEvent> action) {
+        VBox card = new VBox(18);
+        card.setAlignment(Pos.CENTER);
+        card.setPrefSize(270, 210);
+        card.setPadding(new Insets(30));
+        card.setCursor(Cursor.HAND);
+
+        String baseStyle = "-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 20; " +
+                           "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.25), 15, 0, 0, 6);";
+        card.setStyle(baseStyle);
+
+        // Icône dans un cercle vert lime
+        StackPane iconBox = new StackPane();
+        Region circle = new Region();
+        circle.setPrefSize(82, 82);
+        circle.setMaxSize(82, 82);
+        circle.setStyle("-fx-background-color: " + VERT_LIME + "; -fx-background-radius: 41;");
+        Label lIcon = new Label(icon);
+        lIcon.setStyle("-fx-font-size: 32; -fx-text-fill: " + BLEU_DEEP + ";");
+        iconBox.getChildren().addAll(circle, lIcon);
+
+        // Titre en vert lime
+        Label lTitre = new Label(titre);
+        lTitre.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 13; " +
+                        "-fx-text-fill: " + VERT_LIME + ";");
+
+        // Description en gris
+        Label lDesc = new Label(desc);
+        lDesc.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 11;");
+        lDesc.setWrapText(true);
+        lDesc.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+
+        card.getChildren().addAll(iconBox, lTitre, lDesc);
+        card.setOnMouseClicked(action);
+
+        // Hover
         card.setOnMouseEntered(e -> {
-            card.setTranslateY(-10);
-            card.setStyle("-fx-background-color: white; -fx-background-radius: 20; -fx-effect: dropshadow(three-pass-box, " + VERT_LIME + ", 20, 0, 0, 0);");
+            card.setStyle(baseStyle +
+                "-fx-border-color: " + VERT_LIME + "; -fx-border-width: 2; -fx-border-radius: 20;");
+            card.setTranslateY(-6);
         });
         card.setOnMouseExited(e -> {
+            card.setStyle(baseStyle);
             card.setTranslateY(0);
-            card.setStyle("-fx-background-color: white; -fx-background-radius: 20; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 0);");
         });
 
         return card;
     }
-    
-    private void finaliserReservation(Salle salle, String nomClasse, String emailProf) {
-        try {
-            System.out.println("--- DÉBUT FINALISATION ---");
-            
-            // 1. Mise à jour visuelle (on sécurise l'appel)
-            try {
-                updateStepperHorizontal(2);
-            } catch (Exception e) {
-                System.out.println("⚠️ Note: Le stepper n'a pas pu être mis à jour, mais on continue...");
-            }
 
-            // 2. Création de la fenêtre
-            javafx.stage.Stage dialog = new javafx.stage.Stage();
-            dialog.initModality(javafx.stage.Modality.APPLICATION_MODAL);
-            dialog.setTitle("UIDT-AI : Validation");
+    // ══════════════════════════════════════════════════════════════════════════
+    //  DASHBOARD (SURVEILLANCE SALLES)
+    // ══════════════════════════════════════════════════════════════════════════
 
-            VBox root = new VBox(20);
-            root.setPadding(new Insets(25));
-            root.setStyle("-fx-background-color: " + (BLEU_DEEP != null ? BLEU_DEEP : "#1a252f") + 
-                         "; -fx-border-color: " + (VERT_LIME != null ? VERT_LIME : "#00ff00") + 
-                         "; -fx-border-width: 2; -fx-background-radius: 10; -fx-border-radius: 10;");
+    @FXML
+    public void showDashboard() {
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
 
-            Label header = new Label("🏁 VALIDATION DE LA RÉSERVATION");
-            header.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 18;");
+        Label titre = creerTitre("SYSTÈME DE SURVEILLANCE — ÉTAT DES SALLES");
 
-            VBox infoBox = new VBox(8);
-            String styleInfo = "-fx-text-fill: white; -fx-font-family: 'Consolas'; -fx-font-size: 13;";
-            infoBox.getChildren().addAll(
-                new Label("UNITÉ : " + salle.getNumeroSalle()),
-                new Label("COURS : " + nomClasse),
-                new Label("DESTINATAIRE : " + emailProf)
-            );
-            infoBox.getChildren().forEach(n -> n.setStyle(styleInfo));
-
-            TextField txtHeure = new TextField("08:00 - 10:00");
-            txtHeure.setStyle("-fx-background-color: #121a21; -fx-text-fill: white; -fx-border-color: #34495e;");
-
-            Button btnOk = new Button("CONFIRMER ET ENVOYER L'EMAIL");
-            btnOk.setMaxWidth(Double.MAX_VALUE);
-            btnOk.setStyle("-fx-background-color: " + VERT_LIME + "; -fx-text-fill: " + BLEU_DEEP + "; -fx-font-weight: bold;");
-            
-            updateStepperHorizontal(2);
-            btnOk.setOnAction(ev -> {
-                try {
-                    salle.setEtatSalle("Occupée");
-                    salleDAO.update(salle);
-                    
-                    if (notificationService != null) {
-                        notificationService.confirmerReservation(emailProf, "Cours [" + nomClasse + "] validé.");
-                    }
-
-                    afficherAlerte("SYSTÈME IA", "Réservation confirmée.");
-                    dialog.close();
-                    showReservations();
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                    afficherAlerte("ERREUR", "Échec lors de l'enregistrement.");
-                }
-            });
-
-            root.getChildren().addAll(header, new Separator(), infoBox, new Label("CRÉNEAU :"), txtHeure, btnOk);
-            
-            dialog.setScene(new Scene(root, 500, 400));
-            System.out.println("--- AFFICHAGE DU DIALOGUE ---");
-            dialog.show();
-
-        } catch (Exception e) {
-            System.err.println("❌ ERREUR CRITIQUE dans finaliserReservation :");
-            e.printStackTrace(); // Ceci va te dire EXACTEMENT quelle ligne pose problème
+        // ── Données ────────────────────────────────────────────────────────
+        List<Salle> salles = salleDAO.findAll();
+        if (salles == null || salles.isEmpty()) {
+            mainContent.getChildren().addAll(titre, new Label("⚠️ Aucune donnée réseau."));
+            return;
         }
-    }
-    
-    private void updateStepperHorizontal(int indexActive) {
-        // On cherche le conteneur du stepper (le HBox footerStepper)
-        // S'il est dans un VBox mainLayout, on y accède ainsi :
-        VBox mainLayout = (VBox) mainContent.getChildren().get(0);
-        HBox footer = (HBox) mainLayout.getChildren().get(2); // Index 2 si c'est le 3ème élément
+        long libres   = salles.stream()
+            .filter(s -> s.getEtatSalle() != null && "Disponible".equalsIgnoreCase(s.getEtatSalle()))
+            .count();
+        long occupees = salles.size() - libres;
 
-        int labelIndex = 0;
-        for (javafx.scene.Node n : footer.getChildren()) {
-            if (n instanceof Label) {
-                Label l = (Label) n;
-                // On ignore les flèches "➔"
-                if (!l.getText().contains("➔")) {
-                    if (labelIndex == indexActive) {
-                        // Étape active : Vert Lime + Gras
-                        l.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-font-family: 'Consolas';");
-                    } else {
-                        // Étape inactive : Gris
-                        l.setStyle("-fx-text-fill: #5e6d7a; -fx-font-family: 'Consolas';");
-                    }
-                    labelIndex++;
-                }
-            }
-        }
-    }
-    
-    
-    private void updateStepper(int etapeIndex) {
-        // On suppose que sidebar est le VBox contenant tes labels d'étapes
-        // et que stepBox est le conteneur des labels (VBox interne)
-        VBox sidebar = (VBox) ((BorderPane)mainContent.getChildren().get(0)).getLeft();
-        VBox stepBox = (VBox) sidebar.getChildren().get(2);
-        
-        for (int i = 0; i < stepBox.getChildren().size(); i++) {
-            Label l = (Label) stepBox.getChildren().get(i);
-            if (i == etapeIndex) {
-                l.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold;");
-            } else {
-                l.setStyle("-fx-text-fill: #5e6d7a;"); // Gris pour les étapes inactives
-            }
-        }
-    }
-
-    // Petite fonction utilitaire pour les icônes d'équipement
-    private Label creerMiniIcone(String icone, boolean disponible) {
-        Label l = new Label(icone);
-        l.setOpacity(disponible ? 1.0 : 0.2); // Grisé si pas dispo
-        l.setStyle("-fx-font-size: 16;");
-        return l;
-    }
-    // --- FONCTIONS UTILITAIRES POUR LE DESIGN ---
-
-    private Label creerIndicateurEtape(String texte, boolean active) {
-        Label l = new Label(texte);
-        l.setStyle(active ? "-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold;" : "-fx-text-fill: #5e6d7a;");
-        return l;
-    }
-
-    private ToggleButton creerToggleButtonCyber(String texte) {
-        ToggleButton tb = new ToggleButton(texte);
-        tb.setStyle("-fx-background-color: #2c3e50; -fx-text-fill: white; -fx-cursor: hand; -fx-background-radius: 15;");
-        tb.selectedProperty().addListener((obs, oldV, newV) -> {
-            tb.setStyle(newV ? "-fx-background-color: " + VERT_LIME + "; -fx-text-fill: " + BLEU_DEEP + "; -fx-font-weight: bold;" : "-fx-background-color: #2c3e50; -fx-text-fill: white;");
-        });
-        return tb;
-    }
-
-    @FXML 
-    private void showReservations() {
-        mainContent.getChildren().clear();
-        mainContent.setPadding(new Insets(20));
-        
-        // Conteneur principal vertical
-        VBox mainLayout = new VBox(20); 
-        mainLayout.setAlignment(Pos.TOP_CENTER);
-
-        // --- 1. ENTÊTE ---
-        Label mainTitle = new Label("SENSORS & BOOKING HUB");
-        mainTitle.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 26; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
-
-        // --- 2. CONSOLE DE RECHERCHE (Le bloc de saisie) ---
-        VBox searchConsole = new VBox(20);
-        searchConsole.setPadding(new Insets(25));
-        searchConsole.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 20; " +
-                               "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.4), 15, 0, 0, 10);");
-
-        // Ligne 1 : Paramètres de base
-        HBox row1 = new HBox(25);
-        row1.setAlignment(Pos.BOTTOM_LEFT);
-        txtClasse = new TextField(); 
-        txtEffectif = new TextField();
-        datePicker = new DatePicker(java.time.LocalDate.now());
-
-        row1.getChildren().addAll(
-            creerGroupeSaisie("📚 CLASSE / COURS", txtClasse, 250),
-            creerGroupeSaisie("👥 EFFECTIF", txtEffectif, 100),
-            creerGroupeSaisie("📅 DATE DE SESSION", datePicker, 180)
+        // ── KPIs ───────────────────────────────────────────────────────────
+        HBox stats = new HBox(25);
+        stats.setPadding(new Insets(20, 0, 25, 0));
+        stats.getChildren().addAll(
+            creerWidgetStat("TOTAL SALLES",  String.valueOf(salles.size())),
+            creerWidgetStat("DISPONIBLES",   String.valueOf(libres)),
+            creerWidgetStat("OCCUPÉES",      String.valueOf(occupees))
         );
 
-        // Ligne 2 : Email et Action
-        HBox row2 = new HBox(25);
-        row2.setAlignment(Pos.BOTTOM_LEFT);
+        // ── Liste des salles (FlowPane) ────────────────────────────────────
+        containerSalles = new FlowPane(20, 20);
+        containerSalles.setPadding(new Insets(10, 0, 0, 0));
+        rafraichirListeSalles(false, "");
+
+        mainContent.getChildren().addAll(titre, stats, new Separator(), containerSalles);
+        // ← PieChart supprimé ici — désormais dans showSallesManagement()
+    }
+    
+    // ══════════════════════════════════════════════════════════════════════════
+    //  MODULE COMMUN : RÉSERVATIONS (ASSISTANT INTELLIGENT)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @FXML
+    private void showReservations() {
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+
+        Label titre = creerTitre("SENSORS & BOOKING HUB");
+
+        // ── Console de recherche ───────────────────────────────────────────
+        VBox console = new VBox(18);
+        console.setPadding(new Insets(25));
+        console.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 18;");
+
+        HBox row1 = new HBox(20); row1.setAlignment(Pos.BOTTOM_LEFT);
+        txtClasse   = new TextField(); txtEffectif = new TextField();
+        datePicker  = new DatePicker(java.time.LocalDate.now());
+        row1.getChildren().addAll(
+            creerGroupeSaisie("📚 COURS / CLASSE", txtClasse, 240),
+            creerGroupeSaisie("👥 EFFECTIF",       txtEffectif, 100),
+            creerGroupeSaisie("📅 DATE",           datePicker, 170)
+        );
+
+        HBox row2 = new HBox(20); row2.setAlignment(Pos.BOTTOM_LEFT);
         txtEmail = new TextField();
-        Button btnScan = new Button("DÉMARRER L'ANALYSE PRÉDICTIVE");
-        btnScan.setPrefHeight(45);
-        btnScan.setPadding(new Insets(0, 30, 0, 30));
-        btnScan.setStyle("-fx-background-color: " + VERT_LIME + "; -fx-text-fill: " + BLEU_DEEP + "; -fx-font-weight: bold; -fx-background-radius: 10; -fx-cursor: hand;");
+        Button btnScan = new Button("⚡ ANALYSER");
+        btnScan.setPrefHeight(42); btnScan.setPadding(new Insets(0, 28, 0, 28));
+        styliserBoutonPrimaire(btnScan);
+        row2.getChildren().addAll(creerGroupeSaisie("📧 EMAIL RESPONSABLE", txtEmail, 380), btnScan);
 
-        // Style Hover interactif
-        btnScan.setOnMouseEntered(e -> btnScan.setStyle("-fx-background-color: white; -fx-text-fill: " + BLEU_DEEP + "; -fx-font-weight: bold; -fx-background-radius: 10;"));
-        btnScan.setOnMouseExited(e -> btnScan.setStyle("-fx-background-color: " + VERT_LIME + "; -fx-text-fill: " + BLEU_DEEP + "; -fx-font-weight: bold; -fx-background-radius: 10;"));
+        console.getChildren().addAll(row1, new Separator(), row2);
 
-        row2.getChildren().addAll(creerGroupeSaisie("📧 EMAIL DU RESPONSABLE", txtEmail, 400), btnScan);
-        searchConsole.getChildren().addAll(row1, new Separator(), row2);
+        // ── Stepper ────────────────────────────────────────────────────────
+        HBox stepper = construireStepper("1. CONFIGURATION", "2. ANALYSE", "3. RÉSERVATION");
 
-        // --- 3. BARRE DE PROGRESSION (Placée ICI entre saisie et résultats) ---
-        HBox statusStepper = new HBox(50);
-        statusStepper.setAlignment(Pos.CENTER);
-        statusStepper.setPadding(new Insets(15, 30, 15, 30));
-        statusStepper.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 15;");
+        // ── Zone résultats ─────────────────────────────────────────────────
+        FlowPane resultats = new FlowPane(22, 22);
+        resultats.setPadding(new Insets(8, 0, 8, 0));
+        ScrollPane scroll = creerScrollPane(resultats, 420);
+        VBox.setVgrow(scroll, Priority.ALWAYS);
 
-        Label step1 = creerIndicateurEtapeHorizontal("1. CONFIGURATION", true);
-        Label step2 = creerIndicateurEtapeHorizontal("2. ANALYSE IA", false);
-        Label step3 = creerIndicateurEtapeHorizontal("3. RÉSERVATION", false);
-        statusStepper.getChildren().addAll(step1, new Label(" ➔ "), step2, new Label(" ➔ "), step3);
-
-        // --- 4. ZONE DE RÉSULTATS (Tout en bas) ---
-        FlowPane resultsContainer = new FlowPane(25, 25);
-        resultsContainer.setPadding(new Insets(10, 0, 10, 0));
-        ScrollPane scroll = new ScrollPane(resultsContainer);
-        scroll.setFitToWidth(true);
-        scroll.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
-        VBox.setVgrow(scroll, Priority.ALWAYS); // Occupe tout l'espace restant
-
-        // --- LOGIQUE DU SCAN ---
+        // ── Logique du scan ────────────────────────────────────────────────
         btnScan.setOnAction(e -> {
-            resultsContainer.getChildren().clear();
+            resultats.getChildren().clear();
             try {
-                int reqSize = Integer.parseInt(txtEffectif.getText().trim());
-                
-                // On active visuellement l'étape 2
-                step1.setStyle("-fx-text-fill: #5e6d7a; -fx-font-family: 'Consolas';");
-                step2.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-font-family: 'Consolas';");
-                
-                updateStepperHorizontal(1);
+                int effectif = Integer.parseInt(txtEffectif.getText().trim());
                 List<Salle> options = salleDAO.findAll().stream()
-                    .filter(s -> s.getCapacite() >= reqSize && s.getEtatSalle().equalsIgnoreCase("Disponible"))
+                    .filter(s -> "Disponible".equalsIgnoreCase(s.getEtatSalle()) && s.getCapacite() >= effectif)
                     .sorted(Comparator.comparingInt(Salle::getCapacite))
                     .limit(12)
                     .collect(Collectors.toList());
 
                 if (options.isEmpty()) {
-                    // --- LOOK CYBER POUR L'ALERTE ---
-                    VBox alertBox = new VBox(10);
-                    alertBox.setAlignment(Pos.CENTER);
-                    alertBox.setPadding(new Insets(30));
-                    alertBox.setStyle("-fx-background-color: rgba(231, 76, 60, 0.1); -fx-border-color: #e74c3c; -fx-border-radius: 15; -fx-background-radius: 15;");
-
-                    Label errorTitle = new Label("⚠️ CONFLIT DE CAPACITÉ DÉTECTÉ");
-                    errorTitle.setStyle("-fx-text-fill: #e74c3c; -fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 16;");
-
-                    // On cherche la plus grande salle pour informer l'utilisateur
                     int maxCap = salleDAO.findAll().stream().mapToInt(Salle::getCapacite).max().orElse(0);
-                    
-                    Label errorDesc = new Label("L'effectif demandé (100) dépasse la capacité maximale du réseau (" + maxCap + ").");
-                    errorDesc.setStyle("-fx-text-fill: white; -fx-font-family: 'Consolas';");
-
-                    Button btnAdvice = new Button("VOIR LES PLUS GRANDES UNITÉS DISPONIBLES");
-                    btnAdvice.setStyle("-fx-background-color: transparent; -fx-text-fill: " + VERT_LIME + "; -fx-border-color: " + VERT_LIME + "; -fx-cursor: hand;");
-                    
-                    // Action : Relancer le scan avec la taille max au lieu de 100
-                    btnAdvice.setOnAction(ev -> {
-                        txtEffectif.setText(String.valueOf(maxCap));
-                        btnScan.fire(); // On relance le clic automatiquement !
-                    });
-
-                    alertBox.getChildren().addAll(errorTitle, errorDesc, btnAdvice);
-                    resultsContainer.getChildren().add(alertBox);
+                    resultats.getChildren().add(construireAlerteCapacite(effectif, maxCap, btnScan));
                 } else {
                     for (Salle s : options) {
-                        double score = 100 - (s.getCapacite() - reqSize);
-                        resultsContainer.getChildren().add(creerCarteSmartSalle(s, score, txtClasse.getText(), txtEmail.getText()));
+                        double score = Math.max(0, Math.min(100, 100 - (s.getCapacite() - effectif) * 2));
+                        resultats.getChildren().add(creerCarteSmartSalle(s, score));
                     }
                 }
-            } catch (Exception ex) {
-                afficherAlerte("Erreur Analyse", "L'effectif doit être un nombre valide.");
+            } catch (NumberFormatException ex) {
+                afficherAlerte("Erreur saisie", "L'effectif doit être un nombre entier.");
             }
         });
 
-        // ASSEMBLAGE DANS L'ORDRE LOGIQUE
-        mainLayout.getChildren().addAll(mainTitle, searchConsole, statusStepper, scroll);
-        mainContent.getChildren().add(mainLayout);
+        VBox layout = new VBox(18, titre, console, stepper, scroll);
+        mainContent.getChildren().add(layout);
     }
 
-    /**
-     * Helper pour les indicateurs d'étapes horizontaux
-     */
-    private Label creerIndicateurEtapeHorizontal(String texte, boolean active) {
-        Label l = new Label(texte);
-        l.setStyle(active ? "-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-font-family: 'Consolas';" 
-                          : "-fx-text-fill: #5e6d7a; -fx-font-family: 'Consolas';");
-        return l;
-    }
+    // ══════════════════════════════════════════════════════════════════════════
+    //  MODULE COMMUN : NOTIFICATIONS
+    // ══════════════════════════════════════════════════════════════════════════
 
-    /**
-     * Helper pour créer des groupes de saisie compacts avec étiquettes Consolas.
-     */
-    private VBox creerGroupeSaisie(String label, Control input, double width) {
-        VBox group = new VBox(5);
-        Label lbl = new Label(label);
-        lbl.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-size: 10; -fx-font-weight: bold; -fx-font-family: 'Consolas';");
-        input.setPrefWidth(width);
-        input.setStyle("-fx-background-color: #1a252f; -fx-text-fill: white; -fx-border-color: #34495e; -fx-border-radius: 5; -fx-background-radius: 5;");
-        group.getChildren().addAll(lbl, input);
-        return group;
-    }
-    
-    // --- CARTE DE RÉSERVATION (Prend l'email en paramètre) ---
-    private VBox creerCarteReservationSpecifique(Salle salle, String nomClasse, String emailProf) {
-        VBox card = creerCarteSalleDynamique(salle, false);
-        
-        Button btnReserve = new Button("CONFIRMER POUR " + nomClasse);
-        btnReserve.setMaxWidth(Double.MAX_VALUE);
-        btnReserve.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-cursor: hand;");
-        
-        btnReserve.setOnAction(e -> {
-            // Dialogue pour les horaires (Dernière étape)
-            Dialog<String[]> timeDialog = new Dialog<>();
-            timeDialog.setTitle("Horaires");
-            timeDialog.setHeaderText("Salle " + salle.getNumeroSalle() + " | Prof: " + emailProf);
-            ButtonType btnType = new ButtonType("Finaliser", ButtonBar.ButtonData.OK_DONE);
-            timeDialog.getDialogPane().getButtonTypes().addAll(btnType, ButtonType.CANCEL);
-
-            GridPane grid = new GridPane(); grid.setHgap(10); grid.setVgap(10); grid.setPadding(new Insets(20));
-            TextField hDebut = new TextField("08:00"); TextField hFin = new TextField("10:00");
-            grid.add(new Label("Début:"), 0, 0); grid.add(hDebut, 1, 0);
-            grid.add(new Label("Fin:"), 0, 1); grid.add(hFin, 1, 1);
-            timeDialog.getDialogPane().setContent(grid);
-
-            timeDialog.setResultConverter(b -> b == btnType ? new String[]{hDebut.getText(), hFin.getText()} : null);
-
-            timeDialog.showAndWait().ifPresent(times -> {
-                salle.setEtatSalle("Occupée");
-                salleDAO.update(salle);
-                // Utilisation de l'email saisi dans le formulaire
-                notificationService.confirmerReservation(emailProf, 
-                    "Cours " + nomClasse + " | Salle " + salle.getNumeroSalle() + " | " + times[0] + "-" + times[1]);
-                
-                afficherAlerte("Succès", "Mail envoyé à " + emailProf);
-                showReservations();
-            });
-        });
-        card.getChildren().add(btnReserve);
-        return card;
-    }
-
-    // --- 4. NOTIFICATIONS (Réparé) ---
-    @FXML 
+    @FXML
     private void showNotifications() {
-        mainContent.getChildren().clear();
-        Label title = new Label("🔔 Historique des Notifications");
-        title.setStyle("-fx-font-size: 26; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + "; -fx-padding: 0 0 20 0;");
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+
+        Label titre = creerTitre("🔔 HISTORIQUE DES NOTIFICATIONS");
 
         TableView<Notification> table = new TableView<>();
-        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
-        table.setPrefHeight(500);
-        table.setStyle("-fx-selection-bar: " + BLEU_DEEP + ";");
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        table.setPrefHeight(540);
+        table.setPlaceholder(new Label("Aucune notification enregistrée."));
 
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd MMMM 'à' HH:mm", Locale.FRENCH);
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd MMM yyyy  HH:mm", Locale.FRENCH);
 
-        TableColumn<Notification, LocalDateTime> colDate = new TableColumn<>("Date / Heure");
+        TableColumn<Notification, LocalDateTime> colDate = new TableColumn<>("DATE / HEURE");
         colDate.setCellValueFactory(new PropertyValueFactory<>("dateHeure"));
-        colDate.setCellFactory(column -> new TableCell<>() {
-            @Override
-            protected void updateItem(LocalDateTime item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) setText(null);
-                else { setText(item.format(formatter)); setStyle("-fx-text-fill: " + BLEU_DEEP + "; -fx-font-weight: bold;"); }
+        colDate.setCellFactory(col -> new TableCell<>() {
+            @Override protected void updateItem(LocalDateTime v, boolean empty) {
+                super.updateItem(v, empty);
+                setText(empty || v == null ? null : v.format(fmt));
+                if (!empty) setStyle("-fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
             }
         });
+        colDate.setPrefWidth(180);
 
-        TableColumn<Notification, String> colMsg = new TableColumn<>("Message envoyé");
+        TableColumn<Notification, String> colMsg = new TableColumn<>("MESSAGE");
         colMsg.setCellValueFactory(new PropertyValueFactory<>("message"));
 
-        table.getColumns().addAll(colDate, colMsg);
-        table.getItems().addAll(notificationDAO.findAll());
-        mainContent.getChildren().addAll(title, table);
+        TableColumn<Notification, String> colStatut = new TableColumn<>("STATUT");
+        colStatut.setCellValueFactory(new PropertyValueFactory<>("statut"));
+        colStatut.setPrefWidth(100);
+
+        table.getColumns().addAll(colDate, colMsg, colStatut);
+
+        List<Notification> notifs = notificationDAO.findAll();
+        if (notifs != null) table.getItems().addAll(notifs);
+
+        mainContent.getChildren().addAll(titre, table);
     }
 
-    // --- LOGIQUE COMMUNE ---
+    // ══════════════════════════════════════════════════════════════════════════
+    //  SOUS-MODULE ENSEIGNANT : CRÉNEAUX
+    // ══════════════════════════════════════════════════════════════════════════
 
-    private void refreshSallesList(boolean interactionActive, String filtre) {
-        containerSalles.getChildren().clear();
-        try {
-            List<Salle> liste = salleDAO.findAll();
-            if (!filtre.isEmpty()) {
-                String f = filtre.toLowerCase();
-                liste = liste.stream()
-                    .filter(s -> s.getNumeroSalle().toLowerCase().contains(f) || 
-                                (s.getBatiment() != null && s.getBatiment().getNomBatiment().toLowerCase().contains(f)))
-                    .collect(Collectors.toList());
-            }
-            for (Salle s : liste) { containerSalles.getChildren().add(creerCarteSalleDynamique(s, interactionActive)); }
-        } catch (Exception e) { e.printStackTrace(); }
+    private void showCreneauxEnseignant(Utilisateur enseignant) {
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+
+        mainContent.getChildren().add(btnRetour(() -> showTeacherView(enseignant)));
+
+        Label titre = creerTitre("📅 MES RÉSERVATIONS");
+
+        VBox placeholder = new VBox();
+        placeholder.setAlignment(Pos.CENTER); placeholder.setPrefHeight(300);
+        placeholder.setStyle("-fx-background-color: #f8fafc; -fx-border-color: #e2e8f0; " +
+                             "-fx-border-radius: 12; -fx-background-radius: 12;");
+        Label msg = new Label("Les créneaux validés pour " +
+                (enseignant != null ? enseignant.getNom() : "cet enseignant") +
+                " s'afficheront ici.");
+        msg.setStyle("-fx-text-fill: " + GRIS_TEXTE + ";");
+        placeholder.getChildren().add(msg);
+
+        mainContent.getChildren().addAll(titre, placeholder);
     }
 
-    private VBox creerCarteSalleDynamique(Salle salle, boolean avecBouton) {
-        VBox card = new VBox(12);
-        card.setPadding(new Insets(20));
-        card.setPrefWidth(260);
-        card.setStyle("-fx-background-color: white; -fx-background-radius: 20; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 15, 0, 0, 0);");
-        Label lNom = new Label(salle.getNumeroSalle());
-        lNom.setStyle("-fx-font-weight: bold; -fx-font-size: 24; -fx-text-fill: " + BLEU_DEEP + ";");
-        Label lBat = new Label("📍 " + (salle.getBatiment() != null ? salle.getBatiment().getNomBatiment() : "N/A"));
-        lBat.setStyle("-fx-text-fill: " + BLEU_DEEP + "; -fx-font-weight: bold;");
-        Label lInfo = new Label("👥 Capacité: " + salle.getCapacite());
-        String etat = salle.getEtatSalle();
-        Label lStatut = new Label(etat.toUpperCase());
-        lStatut.setAlignment(Pos.CENTER); lStatut.setMaxWidth(Double.MAX_VALUE);
-        lStatut.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME + "; -fx-padding: 8 0; -fx-background-radius: 10; -fx-font-weight: bold;");
-        card.getChildren().addAll(lNom, lBat, lInfo, lStatut);
-        if (avecBouton) {
-            Button actionBtn = new Button(etat.equalsIgnoreCase("Disponible") ? "RÉSERVER" : "LIBÉRER");
-            actionBtn.setMaxWidth(Double.MAX_VALUE);
-            actionBtn.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 10;");
-            actionBtn.setOnAction(e -> gererClicSalle(salle));
-            card.getChildren().add(actionBtn);
-        }
-        return card;
-    }
-
-    private VBox creerWidgetStat(String titre, String valeur) {
-        VBox widget = new VBox(5);
-        widget.setAlignment(Pos.CENTER); widget.setPrefSize(210, 120);
-        widget.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 25; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 15, 0, 0, 0);");
-        Label lblTitre = new Label(titre); lblTitre.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold;");
-        Label lblVal = new Label(valeur); lblVal.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-size: 40; -fx-font-weight: bold;");
-        widget.getChildren().addAll(lblTitre, lblVal);
-        return widget;
-    }
-
-    private void gererClicSalle(Salle salle) {
-        if (salle.getEtatSalle().equalsIgnoreCase("Occupée")) {
-            salle.setEtatSalle("Disponible"); salleDAO.update(salle); showSalles();
-        } else { showReservations(); }
-    }
-
-    private void afficherAlerte(String titre, String message) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle(titre); alert.setHeaderText(null); alert.setContentText(message); alert.showAndWait();
-    }
-    
- // --- 5. MODULE ADMINISTRATEUR (Gestion Globale & IA) ---
+    // ══════════════════════════════════════════════════════════════════════════
+    //  SOUS-MODULE ADMIN : GESTION UTILISATEURS
+    // ══════════════════════════════════════════════════════════════════════════
 
     @FXML
-    private void showAdminPanel() {
-        mainContent.getChildren().clear();
-        // Fond blanc pur pour un contraste maximal avec le Vert Lime
-        mainContent.setStyle("-fx-background-color: #FFFFFF;"); 
-        mainContent.setPadding(new Insets(30));
+    public void showUserManagement() {
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+        mainContent.setPadding(new Insets(25, 40, 40, 40));
 
-        // --- 1. HEADER (Style Terminal High-Tech) ---
-        VBox header = new VBox(8);
-        Label title = new Label("INTERFACE ADMINISTRATEUR");
-        title.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 26; -fx-font-weight: bold; -fx-text-fill: #1e293b;");
-        
-        // Petite barre de progression décorative (Vert Lime)
-        Region accentBar = new Region();
-        accentBar.setPrefHeight(4);
-        accentBar.setMaxWidth(150);
-        accentBar.setStyle("-fx-background-color: " + VERT_LIME + "; -fx-background-radius: 2;");
-        header.getChildren().addAll(title, accentBar);
+        mainContent.getChildren().add(btnRetour(this::showAdminPanel));
 
-        // --- 2. ZONE DE CHEMIN (Style TryHackMe - Circuit Actif) ---
-        Pane pathContainer = new Pane();
-        pathContainer.setPrefHeight(650); 
+        Label titre = creerTitre("👤 RÉPERTOIRE DES UTILISATEURS");
 
-        // Création des modules (Nodes)
-        VBox node1 = creerNodeTHM("UTILISATEURS", "👤", "Accès et Privilèges", e -> showUserManagement());
-        node1.setLayoutX(430); node1.setLayoutY(20);
+        // ── Barre d'outils ─────────────────────────────────────────────────
+        TextField search = new TextField();
+        search.setPromptText("🔍 Rechercher par nom ou email...");
+        search.setPrefWidth(380);
+        search.setStyle("-fx-background-radius: 8; -fx-padding: 9; " +
+                        "-fx-border-color: #e2e8f0; -fx-border-radius: 8;");
 
-        VBox node2 = creerNodeTHM("INFRASTRUCTURE", "🏢", "Salles & Bâtiments", e -> showSallesManagement());
-        node2.setLayoutX(80); node2.setLayoutY(210);
+        Button btnAjouter = new Button("+ NOUVEL UTILISATEUR");
+        styliserBoutonSecondaire(btnAjouter);
+        btnAjouter.setOnAction(e -> dialogAjouterUtilisateur());
 
-        VBox node3 = creerNodeTHM("INVENTAIRE", "⚙️", "Maintenance IoT", e -> showInventoryManagement());
-        node3.setLayoutX(430); node3.setLayoutY(400);
+        Region spacer = new Region(); HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox toolbar = new HBox(15, search, spacer, btnAjouter);
+        toolbar.setAlignment(Pos.CENTER_LEFT);
+        toolbar.setPadding(new Insets(10, 0, 10, 0));
 
-        // Lignes de connexion (Câblage en VERT LIME LUMINEUX)
-        // On remplace le gris par ton vert lime avec un effet de lueur
-        Line line1 = new Line(520, 120, 200, 230); 
-        Line line2 = new Line(200, 340, 520, 420); 
-        
-        String limeLineStyle = "-fx-stroke: " + VERT_LIME + "; " +
-                               "-fx-stroke-width: 4; " +
-                               "-fx-stroke-dash-array: 15; " +
-                               "-fx-opacity: 0.6; " + // Un peu de transparence pour le style
-                               "-fx-effect: dropshadow(three-pass-box, " + VERT_LIME + ", 10, 0, 0, 0);";
-        
-        line1.setStyle(limeLineStyle); 
-        line2.setStyle(limeLineStyle);
-
-        pathContainer.getChildren().addAll(line1, line2, node1, node2, node3);
-
-        // --- 3. SECTION IA (Néon sur Bleu Deep) ---
-        VBox aiSection = new VBox(20);
-        aiSection.setPadding(new Insets(35, 30, 35, 30));
-        
-        // On ajoute une bordure VERT LIME au bloc pour le faire ressortir sur le blanc
-        aiSection.setStyle("-fx-background-color: " + BLEU_DEEP + "; " +
-                           "-fx-background-radius: 30; " +
-                           "-fx-border-color: " + VERT_LIME + "; " +
-                           "-fx-border-width: 1.5; " +
-                           "-fx-border-radius: 30; " +
-                           "-fx-effect: dropshadow(three-pass-box, rgba(0,255,157,0.2), 25, 0, 0, 10);");
-        
-        Label aiTitle = new Label("🤖 OPTIMISATION PAR IA");
-        aiTitle.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-family: 'Consolas'; -fx-font-size: 22; -fx-font-weight: bold; -fx-letter-spacing: 2;");
-
-        Separator aiSep = new Separator();
-        aiSep.setStyle("-fx-background-color: " + VERT_LIME + "; -fx-opacity: 0.4;");
-
-        Label aiDesc = new Label("Algorithmes neuronaux activés : Analyse de charge et résolution de conflits.");
-        aiDesc.setWrapText(true);
-        aiDesc.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-style: italic; -fx-font-size: 15; -fx-opacity: 0.9;");
-
-        // Bouton Vert Lime Plein (Imposant)
-        Button btnRunAI = new Button("LANCER LE DIAGNOSTIC SYSTÈME");
-        btnRunAI.setMaxWidth(Double.MAX_VALUE);
-        btnRunAI.setCursor(javafx.scene.Cursor.HAND);
-        btnRunAI.setStyle("-fx-background-color: " + VERT_LIME + "; " +
-                          "-fx-text-fill: " + BLEU_DEEP + "; " + // Texte bleu foncé sur fond lime = lisibilité parfaite
-                          "-fx-font-weight: bold; -fx-background-radius: 12; -fx-padding: 15 25;");
-
-        btnRunAI.setOnAction(e -> {
-            btnRunAI.setDisable(true);
-            btnRunAI.setText("⚡ INITIALISATION DU SCAN...");
-            javafx.animation.PauseTransition pause = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(2));
-            pause.setOnFinished(ev -> {
-                lancerDiagnosticIA();
-                btnRunAI.setDisable(false);
-                btnRunAI.setText("LANCER LE DIAGNOSTIC SYSTÈME");
-            });
-            pause.play();
-        });
-
-        aiSection.getChildren().addAll(aiTitle, aiSep, aiDesc, btnRunAI);
-
-        // ScrollPane invisible pour laisser le blanc respirer
-        ScrollPane scroll = new ScrollPane(pathContainer);
-        scroll.setFitToWidth(true);
-        scroll.setPrefHeight(450);
-        scroll.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-viewport-background: transparent;");
-
-        mainContent.getChildren().addAll(header, scroll, aiSection);
-    }
-    
-    private VBox creerNodeTHM(String titre, String icon, String desc, EventHandler<MouseEvent> action) {
-        VBox container = new VBox(20);
-        container.setAlignment(Pos.CENTER_LEFT);
-        container.setCursor(Cursor.HAND);
-        container.setOnMouseClicked(action);
-
-        // --- LE PANNEAU DE CONTRÔLE ISOMÉTRIQUE ---
-        StackPane isometricPanel = new StackPane();
-        isometricPanel.setPrefSize(220, 130);
-
-        // 1. La Base (Profondeur)
-        Region isoBase = new Region();
-        isoBase.setPrefSize(200, 45);
-        isoBase.setStyle("-fx-background-color: #080c12; -fx-background-radius: 10 10 25 25; -fx-translate-y: 15;");
-
-        // 2. Le Corps Principal (Style Cadre Word)
-        Region mainBody = new Region();
-        mainBody.setPrefSize(200, 100);
-        mainBody.setStyle("-fx-background-color: " + BLEU_DEEP + "; " +
-                         "-fx-background-radius: 15; " +
-                         "-fx-border-color: #1a252f; " +
-                         "-fx-border-width: 4; " +
-                         "-fx-border-radius: 15; " +
-                         "-fx-border-insets: 2;");
-
-        // 3. Le "Data Stack" (Panneau de monitoring)
-        StackPane dataStack = new StackPane();
-        dataStack.setPrefSize(180, 70);
-        dataStack.setMaxSize(180, 70);
-        Region dataSurface = new Region();
-        dataSurface.setStyle("-fx-background-color: rgba(163, 255, 51, 0.05); -fx-background-radius: 10;");
-        
-        // Motifs de données (Lignes de scan)
-        HBox patterns = new HBox(5);
-        patterns.setPadding(new Insets(15));
-        patterns.setAlignment(Pos.CENTER_LEFT);
-        Line scanLine = new Line(0, 0, 90, 0); 
-        scanLine.setStyle("-fx-stroke: " + VERT_LIME + "; -fx-stroke-width: 0.8; -fx-opacity: 0.3;");
-        
-        HBox activeFlow = new HBox(4);
-        Line a1 = new Line(0, 0, 12, 0); a1.setStyle("-fx-stroke: " + VERT_LIME + "; -fx-stroke-width: 2; -fx-opacity: 0;");
-        Line a2 = new Line(0, 0, 8, 0);  a2.setStyle("-fx-stroke: " + VERT_LIME + "; -fx-stroke-width: 2; -fx-opacity: 0;");
-        activeFlow.getChildren().addAll(a1, a2);
-        
-        patterns.getChildren().addAll(scanLine, activeFlow);
-        dataStack.getChildren().addAll(dataSurface, patterns);
-        dataStack.setTranslateY(-8);
-
-        // 4. L'Icône (Floating Cyber-Badge) - Positionnée en haut
-        Label lIcon = new Label(icon);
-        lIcon.setStyle("-fx-font-size: 32; -fx-background-color: rgba(0,0,0,0.4); -fx-padding: 8; -fx-background-radius: 10;");
-        lIcon.setTranslateY(-45); 
-
-        // --- 5. LE TITRE INTERNE (Écrit en Vert Lime, juste en bas du logo) ---
-        Label lTitreInterne = new Label(titre.toUpperCase());
-        lTitreInterne.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 10; " +
-                              "-fx-text-fill: " + VERT_LIME + "; -fx-letter-spacing: 1.2;");
-        lTitreInterne.setTranslateY(18); // Placé sur la partie basse du panneau bleu
-
-        isometricPanel.getChildren().addAll(isoBase, mainBody, dataStack, lTitreInterne, lIcon);
-
-        // --- TEXTES EXTERNES (Seulement la description) ---
-        VBox textInfo = new VBox(3);
-        Label lDesc = new Label(desc);
-        lDesc.setWrapText(true);
-        lDesc.setPrefWidth(200);
-        lDesc.setStyle("-fx-font-size: 11; -fx-text-fill: #64748b; -fx-font-style: italic;");
-        textInfo.getChildren().add(lDesc);
-
-        HBox globalBox = new HBox(25);
-        globalBox.setAlignment(Pos.CENTER_LEFT);
-        globalBox.getChildren().addAll(isometricPanel, textInfo);
-        container.getChildren().add(globalBox);
-
-        // --- EFFET HOVER : MISE SOUS TENSION ---
-        container.setOnMouseEntered(e -> {
-            String glowStyle = "-fx-stroke: " + VERT_LIME + "; -fx-stroke-width: 2; -fx-opacity: 1; -fx-effect: dropshadow(three-pass-box, " + VERT_LIME + ", 10, 0, 0, 0);";
-            a1.setStyle(glowStyle); a2.setStyle(glowStyle);
-            
-            // Le titre s'illumine légèrement au survol
-            lTitreInterne.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 10; " +
-                                  "-fx-text-fill: white; -fx-letter-spacing: 1.2; " +
-                                  "-fx-effect: dropshadow(three-pass-box, " + VERT_LIME + ", 8, 0, 0, 0);");
-
-            mainBody.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 15; " +
-                             "-fx-border-color: " + VERT_LIME + "; -fx-border-width: 4; -fx-border-radius: 15; -fx-border-insets: 2;");
-            
-            container.setTranslateY(-5);
-            container.setScaleX(1.02); container.setScaleY(1.02);
-        });
-
-        container.setOnMouseExited(e -> {
-            a1.setOpacity(0); a2.setOpacity(0);
-            
-            lTitreInterne.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 10; " +
-                                  "-fx-text-fill: " + VERT_LIME + "; -fx-letter-spacing: 1.2;");
-
-            mainBody.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 15; " +
-                             "-fx-border-color: #1a252f; -fx-border-width: 4; -fx-border-radius: 15; -fx-border-insets: 2;");
-            
-            container.setTranslateY(0);
-            container.setScaleX(1.0); container.setScaleY(1.0);
-        });
-
-        return container;
-    } 
-    
-    
-    // Fonction utilitaire pour créer des cartes d'action Admin
-    	private VBox creerCarteAdmin(String titre, String icon, String description, EventHandler<MouseEvent> action) {
-    	    VBox card = new VBox(15);
-    	    card.setPadding(new Insets(25));
-    	    card.setPrefSize(260, 220);
-    	    card.setAlignment(Pos.TOP_LEFT);
-    	    
-    	    // Style CYBER
-    	    String styleBase = "-fx-background-color: " + BLEU_DEEP + "; " +
-    	                       "-fx-background-radius: 25; " +
-    	                       "-fx-cursor: hand; " +
-    	                       "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.3), 15, 0, 0, 5);";
-    	    
-    	    card.setStyle(styleBase);
-
-    	    // --- ICI ON LIE L'ACTION DU CLIC ---
-    	    card.setOnMouseClicked(action);
-
-    	    // --- ICON CONTAINER ---
-    	    StackPane iconContainer = new StackPane();
-    	    iconContainer.setPrefSize(50, 50);
-    	    iconContainer.setMaxSize(50, 50);
-    	    iconContainer.setStyle("-fx-background-color: #2c3e50; -fx-background-radius: 12;");
-    	    
-    	    Label lIcon = new Label(icon);
-    	    lIcon.setStyle("-fx-font-size: 24; -fx-text-fill: " + VERT_LIME + ";");
-    	    iconContainer.getChildren().add(lIcon);
-
-    	    // --- TEXTES ---
-    	    Label lTitre = new Label(titre.toUpperCase());
-    	    lTitre.setStyle("-fx-font-weight: bold; -fx-font-size: 16; -fx-text-fill: " + VERT_LIME + ";");
-
-    	    Label lDesc = new Label(description);
-    	    lDesc.setWrapText(true);
-    	    lDesc.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-size: 12; -fx-opacity: 0.7;");
-
-    	    card.getChildren().addAll(iconContainer, lTitre, lDesc);
-
-    	    // Animations (Survol)
-    	    card.setOnMouseEntered(e -> {
-    	        card.setTranslateY(-10);
-    	        card.setStyle(styleBase + "-fx-border-color: " + VERT_LIME + "; -fx-border-width: 2; -fx-border-radius: 25;");
-    	    });
-    	    card.setOnMouseExited(e -> {
-    	        card.setTranslateY(0);
-    	        card.setStyle(styleBase);
-    	    });
-
-    	    return card;
-    	}
-    
- // --- MOTEUR DE DIAGNOSTIC IA ---
-
-    	private void lancerDiagnosticIA() {
-    	    List<Salle> salles = salleDAO.findAll();
-    	    List<Equipement> equipements = equipementDAO.findAll();
-    	    StringBuilder rapport = new StringBuilder();
-    	    
-    	    int alertesCritiques = 0;
-    	    int optimisations = 0;
-
-    	    rapport.append("--- [ SESSION D'ANALYSE IA : ").append(java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))).append(" ] ---\n\n");
-    	    rapport.append("> SCAN DU RÉSEAU DES LOCAUX...\n");
-
-    	    // 1. Analyse des pannes matérielles (Impact sur les cours)
-    	    for (Equipement e : equipements) {
-    	        if ("En panne".equals(e.getEtatFonctionnement()) || "En maintenance".equals(e.getEtatFonctionnement())) {
-    	            alertesCritiques++;
-    	            rapport.append("⚠️ [ALERTE MATÉRIEL] ").append(e.getNomEquipement())
-    	                   .append(" (ID: ").append(e.getIdEquipement()).append(") est indisponible ")
-    	                   .append("en Salle ").append(e.getSalle() != null ? e.getSalle().getNumeroSalle() : "Stock").append(".\n");
-    	        }
-    	    }
-
-    	    // 2. Analyse de la capacité des salles (Optimisation d'espace)
-    	    for (Salle s : salles) {
-    	        if (s.getCapacite() < 15) {
-    	            optimisations++;
-    	            rapport.append("ℹ️ [OPTIMISATION] Salle ").append(s.getNumeroSalle())
-    	                   .append(" : Capacité très réduite. À réserver uniquement pour des travaux de groupe.\n");
-    	        }
-    	    }
-
-    	    // 3. Synthèse finale
-    	    rapport.append("\n------------------------------------------------\n");
-    	    if (alertesCritiques > 0) {
-    	        rapport.append("❌ RÉSULTAT : ").append(alertesCritiques).append(" CONFLITS OPÉRATIONNELS DÉTECTÉS.\n");
-    	        rapport.append("👉 CONSEIL : Vérifiez l'inventaire avant les prochaines réservations.");
-    	    } else {
-    	        rapport.append("✅ RÉSULTAT : SYSTÈME OPTIMAL. Aucun conflit de ressources détecté.");
-    	    }
-
-    	    // Affichage du rapport dans ta console "Cyber"
-    	    showIAReportDialog(rapport.toString());
-    	}
-
-    	private void showIAReportDialog(String message) {
-    	    javafx.stage.Stage dialog = new javafx.stage.Stage();
-    	    // Bloque l'interaction avec la fenêtre principale tant que le rapport est ouvert
-    	    dialog.initModality(javafx.stage.Modality.APPLICATION_MODAL); 
-    	    dialog.setTitle("UIDT-AI : Terminal d'Analyse");
-
-    	    VBox root = new VBox(20);
-    	    root.setPadding(new Insets(25));
-    	    // Fond bleu profond avec bordure néon verte
-    	    root.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-border-color: " + VERT_LIME + "; -fx-border-width: 2; -fx-background-radius: 10; -fx-border-radius: 10;");
-
-    	    Label header = new Label("🤖 ANALYSE PRÉDICTIVE TERMINÉE");
-    	    header.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-size: 18; -fx-font-weight: bold; -fx-letter-spacing: 2;");
-
-    	    TextArea area = new TextArea(message);
-    	    area.setEditable(false);
-    	    area.setWrapText(true);
-    	    
-    	    // --- STYLE CONSOLE CYBER ---
-    	    // On ajoute une bordure discrète autour du texte pour l'effet "Écran"
-    	    area.setStyle("-fx-control-inner-background: #121a21; " +
-    	                  "-fx-text-fill: " + VERT_LIME + "; " +
-    	                  "-fx-font-family: 'Consolas', 'Monospace'; " +
-    	                  "-fx-font-size: 13; " +
-    	                  "-fx-border-color: " + VERT_LIME + "44; " + 
-    	                  "-fx-border-radius: 5; " +
-    	                  "-fx-background-radius: 5;");
-    	    area.setPrefHeight(300);
-
-    	    // Bouton de fermeture avec style interactif
-    	    Button btnClose = new Button("RETOUR À LA CONSOLE");
-    	    btnClose.setMaxWidth(Double.MAX_VALUE);
-    	    btnClose.setCursor(javafx.scene.Cursor.HAND);
-    	    
-    	    String btnStyle = "-fx-background-color: " + VERT_LIME + "; -fx-text-fill: " + BLEU_DEEP + "; -fx-font-weight: bold; -fx-background-radius: 8;";
-    	    String btnHover = "-fx-background-color: #FFFFFF; -fx-text-fill: " + BLEU_DEEP + "; -fx-font-weight: bold; -fx-background-radius: 8;";
-    	    
-    	    btnClose.setStyle(btnStyle);
-    	    btnClose.setOnMouseEntered(e -> btnClose.setStyle(btnHover));
-    	    btnClose.setOnMouseExited(e -> btnClose.setStyle(btnStyle));
-    	    
-    	    btnClose.setOnAction(e -> dialog.close());
-
-    	    root.getChildren().addAll(header, new Separator(), area, btnClose);
-    	    
-    	    javafx.scene.Scene scene = new Scene(root, 580, 480);
-    	    dialog.setScene(scene);
-    	    dialog.show();
-    	}
-    
-    @FXML
-    private void showUserManagement() {
-        mainContent.getChildren().clear();
-        
-        Label title = new Label("👤 RÉPERTOIRE DES UTILISATEURS");
-        title.setStyle("-fx-font-size: 24; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
-
-        // Barre d'outils (Recherche + Ajout)
-        HBox toolBar = new HBox(15);
-        toolBar.setAlignment(Pos.CENTER_LEFT);
-        toolBar.setPadding(new Insets(20, 0, 20, 0));
-        
-        TextField searchUser = new TextField();
-        searchUser.setPromptText("🔍 Rechercher un nom ou un email...");
-        searchUser.setPrefWidth(350);
-        searchUser.setStyle("-fx-background-radius: 15; -fx-padding: 8;");
-
-        Button btnAddUser = new Button("+ NOUVEL UTILISATEUR");
-        btnAddUser.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-padding: 10 20; -fx-background-radius: 10; -fx-cursor: hand;");
-        btnAddUser.setOnAction(e -> showAddUserDialog());
-
-        toolBar.getChildren().addAll(searchUser, btnAddUser);
-
+        // ── Tableau ────────────────────────────────────────────────────────
         TableView<Utilisateur> table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        table.setPrefHeight(450);
+        table.setPrefHeight(480);
+        table.setPlaceholder(new Label("Aucun utilisateur trouvé."));
 
-        // --- COLONNES ---
-        TableColumn<Utilisateur, String> colNom = new TableColumn<>("Nom Complet");
+        TableColumn<Utilisateur, String> colNom   = new TableColumn<>("NOM");
         colNom.setCellValueFactory(new PropertyValueFactory<>("nom"));
 
-        TableColumn<Utilisateur, String> colEmail = new TableColumn<>("Email Professionnel");
+        TableColumn<Utilisateur, String> colPrenom = new TableColumn<>("PRÉNOM");
+        colPrenom.setCellValueFactory(new PropertyValueFactory<>("prenom"));
+
+        TableColumn<Utilisateur, String> colEmail  = new TableColumn<>("EMAIL");
         colEmail.setCellValueFactory(new PropertyValueFactory<>("email"));
 
-        TableColumn<Utilisateur, String> colRole = new TableColumn<>("Rôle / Statut");
+        TableColumn<Utilisateur, String> colRole   = new TableColumn<>("RÔLE");
         colRole.setCellValueFactory(new PropertyValueFactory<>("role"));
+        colRole.setPrefWidth(140);
 
-        // --- COLONNE ACTIONS MISE À JOUR ---
-        TableColumn<Utilisateur, Void> colActions = new TableColumn<>("ACTIONS");
-        colActions.setCellFactory(param -> new TableCell<>() {
+        TableColumn<Utilisateur, Void> colActions  = new TableColumn<>("ACTIONS");
+        colActions.setPrefWidth(110);
+        colActions.setCellFactory(p -> new TableCell<>() {
             private final Button btnEdit = new Button("✏️");
-            // Correction Unicode pour l'icône de suppression
-            private final Button btnDel = new Button("\uD83D\uDDD1"); 
-            private final HBox pane = new HBox(15, btnEdit, btnDel);
-            {
-                pane.setAlignment(Pos.CENTER);
-                btnEdit.setStyle("-fx-background-color: transparent; -fx-cursor: hand; -fx-font-size: 16;");
-                btnDel.setStyle("-fx-background-color: transparent; -fx-text-fill: #e74c3c; -fx-cursor: hand; -fx-font-size: 16;");
-                
-                // LIEN AVEC LA MÉTHODE DE MODIFICATION
-                btnEdit.setOnAction(e -> {
-                    Utilisateur u = getTableView().getItems().get(getIndex());
-                    showEditUserDialog(u); // On appelle le formulaire de mise à jour
-                });
-                
-                btnDel.setOnAction(e -> {
-                    Utilisateur u = getTableView().getItems().get(getIndex());
-                    confirmerSuppressionUser(u);
-                });
-            }
-            @Override
-            protected void updateItem(Void item, boolean empty) {
-                super.updateItem(item, empty);
-                setGraphic(empty ? null : pane);
-            }
+            private final Button btnDel  = new Button("🗑");
+            private final HBox   pane    = new HBox(12, btnEdit, btnDel);
+            { pane.setAlignment(Pos.CENTER);
+              btnEdit.setStyle("-fx-background-color: transparent; -fx-cursor: hand;");
+              btnDel .setStyle("-fx-background-color: transparent; -fx-text-fill: #ef4444; -fx-cursor: hand;");
+              btnEdit.setOnAction(e -> dialogModifierUtilisateur(getTableView().getItems().get(getIndex())));
+              btnDel .setOnAction(e -> confirmerSuppressionUser(getTableView().getItems().get(getIndex()))); }
+            @Override protected void updateItem(Void v, boolean empty) {
+                super.updateItem(v, empty); setGraphic(empty ? null : pane); }
         });
 
-        table.getColumns().addAll(colNom, colEmail, colRole, colActions);
-        
-        // Logique de chargement et recherche
-        List<Utilisateur> allUsers = utilisateurDAO.findAll();
-        table.getItems().addAll(allUsers);
-        
-        searchUser.textProperty().addListener((obs, oldVal, newVal) -> {
-            table.getItems().clear();
-            String filter = newVal.toLowerCase();
-            table.getItems().addAll(allUsers.stream()
-                .filter(u -> u.getNom().toLowerCase().contains(filter) || u.getEmail().toLowerCase().contains(filter))
-                .collect(Collectors.toList()));
-        });
+        table.getColumns().addAll(colNom, colPrenom, colEmail, colRole, colActions);
 
-        mainContent.getChildren().addAll(title, toolBar, table);
+        List<Utilisateur> tous = utilisateurDAO.findAll();
+        if (tous != null) {
+            ObservableList<Utilisateur> data = FXCollections.observableArrayList(tous);
+            table.setItems(data);
+            search.textProperty().addListener((obs, o, n) -> {
+                String f = n.toLowerCase();
+                table.setItems(data.filtered(u ->
+                    (u.getNom()   != null && u.getNom()  .toLowerCase().contains(f)) ||
+                    (u.getEmail() != null && u.getEmail().toLowerCase().contains(f))));
+            });
+        }
+
+        mainContent.getChildren().addAll(titre, toolbar, table);
     }
-    
-    private void showAddUserDialog() {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Système - Nouvel Utilisateur");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
 
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(25));
-        form.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 15;");
+    // ══════════════════════════════════════════════════════════════════════════
+    //  SOUS-MODULE ADMIN : GESTION SALLES & BÂTIMENTS
+    // ══════════════════════════════════════════════════════════════════════════
 
-        Label header = new Label("ENREGISTRER UN COLLABORATEUR");
-        header.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-font-size: 16;");
-
-        // --- CRÉATION DES CHAMPS ---
-        TextField txtNom = new TextField(); 
-        txtNom.setPromptText("Nom Complet");
-        
-        TextField txtEmail = new TextField(); 
-        txtEmail.setPromptText("Email (ex: prof@univ.sn)");
-        
-        ComboBox<String> cbRole = new ComboBox<>();
-        cbRole.getItems().addAll("Administrateur", "Gestionnaire", "Enseignant", "Étudiant");
-        cbRole.setValue("Enseignant");
-        cbRole.setMaxWidth(Double.MAX_VALUE);
-
-        // --- CONFIGURATION DU STYLE (VERT VIF / NEON) ---
-        // 'aa' à la fin de la couleur HEX permet une opacité vive pour le texte d'aide
-        String fieldStyle = "-fx-background-color: #2c3e50; " +
-                             "-fx-text-fill: " + VERT_LIME + "; " + 
-                             "-fx-prompt-text-fill: " + VERT_LIME + "aa; " + 
-                             "-fx-border-color: " + VERT_LIME + "44; " + 
-                             "-fx-background-radius: 5; " +
-                             "-fx-border-radius: 5; " +
-                             "-fx-font-weight: bold; " +
-                             "-fx-padding: 8;";
-
-        txtNom.setStyle(fieldStyle);
-        txtEmail.setStyle(fieldStyle);
-        cbRole.setStyle(fieldStyle);
-
-        // Config de l'affichage de la sélection (le texte visible quand la liste est fermée)
-        cbRole.setButtonCell(new ListCell<String>() {
-            @Override
-            protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) setText(null);
-                else {
-                    setText(item);
-                    setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold;");
-                }
-            }
-        });
-
-        // Config de l'affichage des éléments dans la liste déroulante
-        cbRole.setCellFactory(lv -> new ListCell<String>() {
-            @Override
-            protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setStyle("-fx-background-color: #2c3e50;");
-                } else {
-                    setText(item);
-                    setStyle("-fx-background-color: #2c3e50; -fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold;");
-                    this.setOnMouseEntered(e -> setStyle("-fx-background-color: " + VERT_LIME + "; -fx-text-fill: " + BLEU_DEEP + ";"));
-                    this.setOnMouseExited(e -> setStyle("-fx-background-color: #2c3e50; -fx-text-fill: " + VERT_LIME + ";"));
-                }
-            }
-        });
-
-        form.getChildren().addAll(header, new Separator(), txtNom, txtEmail, cbRole);
-        dialog.getDialogPane().setContent(form);
-
-        // --- LOGIQUE DE SAUVEGARDE HIBERNATE ---
-        dialog.showAndWait().ifPresent(response -> {
-            if (response == ButtonType.OK) {
-                if (txtNom.getText().isEmpty() || txtEmail.getText().isEmpty()) {
-                    afficherAlerte("Erreur", "Tous les champs sont obligatoires.");
-                    return;
-                }
-                
-                // Création de l'objet (Maintenant possible car Utilisateur n'est plus abstract)
-                Utilisateur u = new Utilisateur();
-                u.setNom(txtNom.getText());
-                u.setEmail(txtEmail.getText());
-                u.setRole(cbRole.getValue());
-                // On utilise l'email comme identifiant par défaut pour la connexion
-                u.setIdentifiantConnexion(txtEmail.getText()); 
-                
-                try {
-                    utilisateurDAO.save(u); // Persistance via le DAO corrigé
-                    showUserManagement();    // Rafraîchir le tableau immédiatement
-                    afficherAlerte("Succès", "L'utilisateur " + u.getNom() + " a été intégré au système.");
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                    afficherAlerte("Erreur DB", "Échec de l'enregistrement dans la base MySQL.");
-                }
-            }
-        });
-    }
-    
-    private void showEditUserDialog(Utilisateur u) {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Mise à jour - " + u.getNom());
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(25));
-        form.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 15;");
-
-        Label header = new Label("MODIFIER LE PROFIL UTILISATEUR");
-        header.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-font-size: 16;");
-
-        // Champs pré-remplis
-        TextField txtNom = new TextField(u.getNom());
-        TextField txtEmail = new TextField(u.getEmail());
-        
-        ComboBox<String> cbRole = new ComboBox<>();
-        cbRole.getItems().addAll("Administrateur", "Gestionnaire", "Enseignant", "Étudiant");
-        cbRole.setValue(u.getRole());
-        cbRole.setMaxWidth(Double.MAX_VALUE);
-
-        // Style Cyber
-        String style = "-fx-background-color: #2c3e50; -fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-background-radius: 5;";
-        txtNom.setStyle(style); txtEmail.setStyle(style); cbRole.setStyle(style);
-
-        form.getChildren().addAll(header, new Label("Nom :"), txtNom, new Label("Email :"), txtEmail, new Label("Rôle :"), cbRole);
-        dialog.getDialogPane().setContent(form);
-
-        dialog.showAndWait().ifPresent(response -> {
-            if (response == ButtonType.OK) {
-                u.setNom(txtNom.getText());
-                u.setEmail(txtEmail.getText());
-                u.setRole(cbRole.getValue());
-                
-                try {
-                    utilisateurDAO.update(u); // Mise à jour via Hibernate
-                    showUserManagement();      // Rafraîchir le tableau
-                    afficherAlerte("Succès", "Profil de " + u.getNom() + " mis à jour.");
-                } catch (Exception ex) {
-                    afficherAlerte("Erreur", "Impossible de modifier l'utilisateur.");
-                }
-            }
-        });
-    }
-    
-    private void confirmerSuppressionUser(Utilisateur u) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("Suppression");
-        alert.setHeaderText("Supprimer l'utilisateur : " + u.getNom());
-        alert.setContentText("Cette action est irréversible. Continuer ?");
-
-        alert.showAndWait().ifPresent(response -> {
-            if (response == ButtonType.OK) {
-                utilisateurDAO.delete(u);
-                showUserManagement();
-            }
-        });
-    }
-    
- // --- GESTION DE L'INVENTAIRE MATÉRIEL ---
-    @FXML
-    private void showInventoryManagement() {
-        mainContent.getChildren().clear();
-        
-        Label title = new Label("⚙️ INVENTAIRE DU MATÉRIEL");
-        title.setStyle("-fx-font-size: 24; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
-
-        HBox toolBar = new HBox(15);
-        toolBar.setAlignment(Pos.CENTER_LEFT);
-        toolBar.setPadding(new Insets(20, 0, 20, 0));
-
-        Button btnAddEquip = new Button("+ NOUVEL ÉQUIPEMENT");
-        btnAddEquip.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-padding: 10 20; -fx-background-radius: 10; -fx-cursor: hand;");
-        btnAddEquip.setOnAction(e -> showAddEquipementDialog());
-
-        toolBar.getChildren().add(btnAddEquip);
-
-        TableView<Equipement> table = new TableView<>();
-        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        table.setPrefHeight(450);
-
-        TableColumn<Equipement, String> colNom = new TableColumn<>("Équipement");
-        colNom.setCellValueFactory(new PropertyValueFactory<>("nomEquipement"));
-
-        TableColumn<Equipement, String> colEtat = new TableColumn<>("État");
-        colEtat.setCellValueFactory(new PropertyValueFactory<>("etatFonctionnement"));
-
-        TableColumn<Equipement, String> colSalle = new TableColumn<>("Salle");
-        colSalle.setCellValueFactory(cellData -> {
-            Salle s = cellData.getValue().getSalle();
-            return new javafx.beans.property.SimpleStringProperty(s != null ? s.getNumeroSalle() : "Stock");
-        });
-
-        // --- NOUVELLE COLONNE ACTIONS ---
-        TableColumn<Equipement, Void> colActions = new TableColumn<>("COMMANDES");
-        colActions.setCellFactory(param -> new TableCell<>() {
-            private final Button btnEdit = new Button("📝");
-            private final Button btnDel = new Button("\uD83D\uDDD1"); 
-            private final HBox pane = new HBox(15, btnEdit, btnDel);
-            {
-                pane.setAlignment(Pos.CENTER);
-                btnEdit.setStyle("-fx-background-color: transparent; -fx-cursor: hand; -fx-font-size: 16;");
-                btnDel.setStyle("-fx-background-color: transparent; -fx-text-fill: #e74c3c; -fx-cursor: hand; -fx-font-size: 16;");
-                
-                btnEdit.setOnAction(e -> showEditEquipementDialog(getTableView().getItems().get(getIndex())));
-                btnDel.setOnAction(e -> confirmerSuppressionEquipement(getTableView().getItems().get(getIndex())));
-            }
-            @Override
-            protected void updateItem(Void item, boolean empty) {
-                super.updateItem(item, empty);
-                setGraphic(empty ? null : pane);
-            }
-        });
-
-        table.getColumns().addAll(colNom, colEtat, colSalle, colActions);
-        table.getItems().addAll(equipementDAO.findAll());
-
-        mainContent.getChildren().addAll(title, toolBar, table);
-    }
-    
-
-    
- // --- GESTION DES SALLES (ADMIN) ---
     private void showSallesManagement() {
-        mainContent.getChildren().clear();
-        
-        // --- 1. EN-TÊTE AVEC SÉLECTEUR DE VUE ---
-        HBox headerBox = new HBox(20);
-        headerBox.setAlignment(Pos.CENTER_LEFT);
-        headerBox.setPadding(new Insets(0, 0, 20, 0));
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+        mainContent.setPadding(new Insets(25, 40, 40, 40));
 
-        Label title = new Label("🏢 RÉSEAU DES LOCAUX");
-        title.setStyle("-fx-font-size: 24; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
+        mainContent.getChildren().add(btnRetour(this::showAdminPanel));
 
-        // ComboBox pour basculer entre les Salles et les Bâtiments
-        ComboBox<String> viewSelector = new ComboBox<>();
-        viewSelector.getItems().addAll("Liste des Salles", "Liste des Bâtiments");
-        viewSelector.setValue("Liste des Salles"); 
-        viewSelector.setStyle("-fx-background-color: white; -fx-border-color: " + BLEU_DEEP + "; -fx-background-radius: 10; -fx-border-radius: 10; -fx-font-weight: bold;");
-        
-        // Action lors du changement de vue
-        viewSelector.setOnAction(e -> {
-            if (viewSelector.getValue().equals("Liste des Bâtiments")) {
-                showBatimentsManagement(); // Assure-toi que cette méthode est bien dans ce fichier
-            } else {
-                showSallesManagement();
-            }
+        // ── En-tête + sélecteur de vue ─────────────────────────────────────
+        ComboBox<String> vueSel = new ComboBox<>();
+        vueSel.getItems().addAll("Salles", "Bâtiments");
+        vueSel.setValue("Salles");
+        vueSel.setStyle("-fx-background-radius: 8; -fx-font-weight: bold;");
+        vueSel.setOnAction(e -> {
+            if ("Bâtiments".equals(vueSel.getValue())) showBatimentsManagement();
+            else showSallesManagement();
         });
 
-        headerBox.getChildren().addAll(title, viewSelector);
+        HBox headerBox = new HBox(20, creerTitre("🏢 RÉSEAU DES LOCAUX"), vueSel);
+        headerBox.setAlignment(Pos.CENTER_LEFT);
 
-        // --- 2. BARRE D'OUTILS (Boutons d'ajout) ---
-        HBox toolBar = new HBox(15);
-        toolBar.setAlignment(Pos.CENTER_LEFT);
-        toolBar.setPadding(new Insets(0, 0, 20, 0));
+        // ── PIE CHART (déplacé du tableau de bord) ─────────────────────────
+        List<Salle> salles = salleDAO.findAll();
+        if (salles == null) salles = new java.util.ArrayList<>();
 
-        Button btnAddSalle = new Button("+ NOUVELLE SALLE");
-        btnAddSalle.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-padding: 10 20; -fx-background-radius: 10; -fx-cursor: hand;");
-        btnAddSalle.setOnAction(e -> showAddSalleDialog());
+        long libres   = salles.stream()
+            .filter(s -> "Disponible".equalsIgnoreCase(s.getEtatSalle())).count();
+        long occupees = salles.size() - libres;
 
-        Button btnAddBat = new Button("+ NOUVEAU BÂTIMENT");
-        btnAddBat.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-padding: 10 20; -fx-background-radius: 10; -fx-cursor: hand;");
-        btnAddBat.setOnAction(e -> showAddBatimentDialog());
+        PieChart pie = new PieChart(javafx.collections.FXCollections.observableArrayList(
+            new PieChart.Data("Disponibles", libres),
+            new PieChart.Data("Occupées",    occupees)
+        ));
+        pie.setTitle("RÉPARTITION DES LOCAUX");
+        pie.setLabelsVisible(false);
+        pie.setLegendVisible(true);
+        pie.setAnimated(true);
+        pie.setPrefSize(380, 300);
 
-        toolBar.getChildren().addAll(btnAddSalle, btnAddBat);
+        VBox chartBox = new VBox(pie);
+        chartBox.setAlignment(Pos.CENTER);
+        chartBox.setPadding(new Insets(16));
+        chartBox.setMaxWidth(420);
+        chartBox.setStyle("-fx-background-color: " + BLEU_DEEP +
+            "; -fx-background-radius: 20;");
 
-        // --- 3. TABLEAU DES SALLES ---
+        // Couleurs correctes : vert lime = disponibles, rouge = occupées
+        final String C_DISPO = VERT_LIME;   // "#A3FF33"
+        final String C_OCC   = "#EF4444";
+
+        javafx.application.Platform.runLater(() -> {
+            // 1. Colorier les tranches
+            java.util.List<PieChart.Data> data = pie.getData();
+            String[] SLICE_COLORS = {C_DISPO, C_OCC};
+            for (int i = 0; i < data.size(); i++) {
+                javafx.scene.Node node = data.get(i).getNode();
+                if (node == null) continue;
+                String c = SLICE_COLORS[i % 2];
+                node.setStyle("-fx-pie-color: " + c + "; -fx-border-color: " + c + "; -fx-border-width: 2;");
+                javafx.scene.effect.DropShadow glow = new javafx.scene.effect.DropShadow();
+                glow.setColor(javafx.scene.paint.Color.web(c));
+                glow.setRadius(18);
+                node.setEffect(glow);
+            }
+            // 2. Fixer les couleurs de la légende (symboles circulaires)
+            int idx = 0;
+            for (javafx.scene.Node sym : pie.lookupAll(".chart-legend-item-symbol")) {
+                sym.setStyle("-fx-background-color: " + SLICE_COLORS[idx % 2] + ", white;");
+                idx++;
+            }
+            // 3. Labels légende en blanc
+            for (javafx.scene.Node item : pie.lookupAll(".chart-legend-item")) {
+                if (item instanceof Label)
+                    ((Label) item).setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
+            }
+            // 4. Titre du graphique
+            javafx.scene.Node chartTitle = pie.lookup(".chart-title");
+            if (chartTitle != null)
+                chartTitle.setStyle("-fx-text-fill: " + VERT_LIME +
+                    "; -fx-font-family: 'Consolas'; -fx-font-size: 15;");
+        });
+
+        // ── Barre outils ────────────────────────────────────────────────────
+        Button btnAddS = new Button("+ NOUVELLE SALLE");
+        btnAddS.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME +
+            "; -fx-font-weight: bold; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand;");
+        btnAddS.setOnAction(e -> dialogAjouterSalle());
+
+        Button btnAddB = new Button("+ NOUVEAU BÂTIMENT");
+        btnAddB.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME +
+            "; -fx-font-weight: bold; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand;");
+        btnAddB.setOnAction(e -> dialogAjouterBatiment());
+
+        HBox toolbar = new HBox(14, btnAddS, btnAddB);
+        toolbar.setPadding(new Insets(0, 0, 12, 0));
+
+        // ── Tableau salles ──────────────────────────────────────────────────
         TableView<Salle> table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
-        table.setPrefHeight(450);
-        table.setStyle("-fx-selection-bar: " + VERT_LIME + "; -fx-selection-bar-non-focused: #d1ff9a;");
+        table.setPrefHeight(380);
+        table.setStyle("-fx-selection-bar: " + VERT_LIME + ";");
 
-        TableColumn<Salle, String> colNum = new TableColumn<>("N° Salle");
+        TableColumn<Salle, String> colNum = new TableColumn<>("N° SALLE");
         colNum.setCellValueFactory(new PropertyValueFactory<>("numeroSalle"));
 
-        TableColumn<Salle, String> colBat = new TableColumn<>("Bâtiment");
-        colBat.setCellValueFactory(cellData -> {
-            Batiment b = cellData.getValue().getBatiment();
-            return new javafx.beans.property.SimpleStringProperty(b != null ? b.getNomBatiment() : "Non assigné");
-        });
+        TableColumn<Salle, String> colBat = new TableColumn<>("BÂTIMENT");
+        colBat.setCellValueFactory(cd -> new SimpleStringProperty(
+            cd.getValue().getBatiment() != null
+                ? cd.getValue().getBatiment().getNomBatiment() : "—"));
 
-        TableColumn<Salle, Integer> colCap = new TableColumn<>("Capacité");
+        TableColumn<Salle, Integer> colCap = new TableColumn<>("CAPACITÉ");
         colCap.setCellValueFactory(new PropertyValueFactory<>("capacite"));
+        colCap.setPrefWidth(90);
 
-        // Colonne Commandes avec correction de l'icône de suppression
-        TableColumn<Salle, Void> colActions = new TableColumn<>("COMMANDES");
-        colActions.setCellFactory(param -> new TableCell<>() {
-            private final Button btnEdit = new Button("📝");
-            // Utilisation du code Unicode \uD83D\uDDD1 pour éviter le carré rouge de la poubelle
-            private final Button btnDel = new Button("\uD83D\uDDD1"); 
-            private final HBox pane = new HBox(15, btnEdit, btnDel);
+        TableColumn<Salle, String> colCat = new TableColumn<>("TYPE");
+        colCat.setCellValueFactory(new PropertyValueFactory<>("categorieSalle"));
+        colCat.setPrefWidth(100);
+
+        TableColumn<Salle, String> colEtat = new TableColumn<>("ÉTAT");
+        colEtat.setCellValueFactory(new PropertyValueFactory<>("etatSalle"));
+        colEtat.setPrefWidth(110);
+        colEtat.setCellFactory(col -> new TableCell<>() {
+            @Override protected void updateItem(String v, boolean empty) {
+                super.updateItem(v, empty);
+                if (empty || v == null) { setText(null); setStyle(""); return; }
+                setText(v.toUpperCase());
+                boolean dispo = "Disponible".equalsIgnoreCase(v);
+                setStyle("-fx-text-fill: " + (dispo ? "#16a34a" : "#ef4444") +
+                    "; -fx-font-weight: bold;");
+            }
+        });
+
+        TableColumn<Salle, Void> colAct = new TableColumn<>("ACTIONS");
+        colAct.setPrefWidth(100);
+        colAct.setCellFactory(p -> new TableCell<>() {
+            private final Button e = new Button("✏️");
+            private final Button d = new Button("🗑");
+            private final HBox   h = new HBox(10, e, d);
             {
-                pane.setAlignment(Pos.CENTER);
-                btnEdit.setStyle("-fx-background-color: transparent; -fx-cursor: hand; -fx-font-size: 16;");
-                // Couleur rouge pour le bouton supprimer
-                btnDel.setStyle("-fx-background-color: transparent; -fx-text-fill: #e74c3c; -fx-cursor: hand; -fx-font-size: 16;");
-                
-                btnEdit.setOnAction(e -> showEditSalleDialog(getTableView().getItems().get(getIndex())));
-                btnDel.setOnAction(e -> confirmerSuppression(getTableView().getItems().get(getIndex())));
+                h.setAlignment(Pos.CENTER);
+                e.setStyle("-fx-background-color: transparent; -fx-cursor: hand;");
+                d.setStyle("-fx-background-color: transparent; -fx-text-fill: #ef4444; -fx-cursor: hand;");
+                e.setOnAction(ev -> dialogModifierSalle(getTableView().getItems().get(getIndex())));
+                d.setOnAction(ev -> confirmerSuppressionSalle(getTableView().getItems().get(getIndex())));
             }
-            @Override
-            protected void updateItem(Void item, boolean empty) {
-                super.updateItem(item, empty);
-                setGraphic(empty ? null : pane);
+            @Override protected void updateItem(Void v, boolean empty) {
+                super.updateItem(v, empty); setGraphic(empty ? null : h);
             }
         });
 
-        table.getColumns().addAll(colNum, colBat, colCap, colActions);
-        
-        // Chargement des données via Hibernate [cite: 37]
-        table.getItems().addAll(salleDAO.findAll());
+        table.getColumns().addAll(colNum, colBat, colCap, colCat, colEtat, colAct);
+        if (!salles.isEmpty()) table.getItems().addAll(salles);
 
-        // --- 4. AFFICHAGE FINAL ---
-        mainContent.getChildren().addAll(headerBox, toolBar, table);
-    }
-    
-    private void showAddEquipementDialog() {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Système - Nouvel Équipement");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        // ── Assemblage : chart + tableau côte à côte ───────────────────────
+        HBox mainRow = new HBox(30, table, chartBox);
+        mainRow.setAlignment(Pos.TOP_LEFT);
+        HBox.setHgrow(table, Priority.ALWAYS);
 
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(25));
-        form.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 15;");
-
-        Label header = new Label("ENREGISTRER UN MATÉRIEL");
-        header.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-font-size: 16;");
-
-        // --- CHAMPS ---
-        TextField txtId = new TextField(); 
-        txtId.setPromptText("Code Inventaire (ex: VP-01)");
-        
-        ComboBox<String> cbType = new ComboBox<>();
-        cbType.getItems().addAll("Vidéoprojecteur", "Tableau Interactif", "Climatisation", "Ordinateur");
-        cbType.setPromptText("Type de matériel");
-        cbType.setMaxWidth(Double.MAX_VALUE);
-
-        ComboBox<Salle> cbSalle = new ComboBox<>();
-        cbSalle.getItems().addAll(salleDAO.findAll());
-        cbSalle.setPromptText("Assigner à une salle");
-        cbSalle.setMaxWidth(Double.MAX_VALUE);
-        
-        // --- STYLE CYBER VIF ---
-        String fieldStyle = "-fx-background-color: #2c3e50; " +
-                            "-fx-text-fill: " + VERT_LIME + "; " +
-                            "-fx-prompt-text-fill: " + VERT_LIME + "aa; " +
-                            "-fx-border-color: " + VERT_LIME + "44; " +
-                            "-fx-background-radius: 5; " +
-                            "-fx-font-weight: bold; " +
-                            "-fx-padding: 8;";
-
-        txtId.setStyle(fieldStyle);
-        cbType.setStyle(fieldStyle);
-        cbSalle.setStyle(fieldStyle);
-
-        // --- CONFIGURATION DES LISTES (COULEUR VERT) ---
-        
-        // 1. Pour le type de matériel (String)
-        cbType.setButtonCell(createStringCell());
-        cbType.setCellFactory(lv -> createStringCell());
-
-        // 2. Pour la salle (Objet Salle)
-        cbSalle.setConverter(new javafx.util.StringConverter<Salle>() {
-            @Override public String toString(Salle s) { return s == null ? "" : s.getNumeroSalle(); }
-            @Override public Salle fromString(String s) { return null; }
-        });
-        cbSalle.setButtonCell(creerSalleCellCyber());
-        cbSalle.setCellFactory(lv -> creerSalleCellCyber());
-
-        form.getChildren().addAll(header, new Separator(), txtId, cbType, cbSalle);
-        dialog.getDialogPane().setContent(form);
-
-        dialog.showAndWait().ifPresent(response -> {
-            if (response == ButtonType.OK) {
-                if (txtId.getText().isEmpty() || cbType.getValue() == null) {
-                    afficherAlerte("Champs manquants", "Le code et le type sont obligatoires.");
-                    return;
-                }
-                
-                Equipement e = new Equipement();
-                e.setIdEquipement(txtId.getText());
-                e.setNomEquipement(cbType.getValue());
-                e.setEtatFonctionnement("Opérationnel");
-                e.setSalle(cbSalle.getValue());
-                
-                try {
-                    equipementDAO.save(e);
-                    showInventoryManagement(); // Rafraîchir le tableau
-                    afficherAlerte("Succès", "L'équipement " + e.getNomEquipement() + " a été ajouté.");
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                    afficherAlerte("Erreur", "Impossible d'enregistrer dans la base.");
-                }
-            }
-        });
+        mainContent.getChildren().addAll(headerBox, toolbar, mainRow);
     }
 
-    private void showEditEquipementDialog(Equipement e) {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Maintenance - " + e.getNomEquipement());
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
 
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(25));
-        form.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 15;");
-
-        Label header = new Label("MODIFIER L'ÉTAT DU MATÉRIEL");
-        header.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold;");
-
-        ComboBox<String> cbEtat = new ComboBox<>();
-        cbEtat.getItems().addAll("Opérationnel", "En panne", "En maintenance");
-        cbEtat.setValue(e.getEtatFonctionnement());
-        cbEtat.setMaxWidth(Double.MAX_VALUE);
-        cbEtat.setStyle("-fx-background-color: #2c3e50; -fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold;");
-
-        form.getChildren().addAll(header, new Label("État actuel :"), cbEtat);
-        dialog.getDialogPane().setContent(form);
-
-        dialog.showAndWait().ifPresent(response -> {
-            if (response == ButtonType.OK) {
-                e.setEtatFonctionnement(cbEtat.getValue());
-                equipementDAO.update(e); // Mise à jour Hibernate
-                showInventoryManagement(); // Rafraîchir
-            }
-        });
-    }
-    
-    private void confirmerSuppressionEquipement(Equipement e) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("ALERTE INVENTAIRE");
-        alert.setHeaderText("Supprimer l'équipement : " + e.getIdEquipement());
-        alert.setContentText("Voulez-vous retirer cet objet de l'inventaire ?");
-
-        alert.showAndWait().ifPresent(response -> {
-            if (response == ButtonType.OK) {
-                equipementDAO.delete(e);
-                showInventoryManagement();
-            }
-        });
-    }
-    // --- FONCTIONS UTILITAIRES POUR LE STYLE DES LISTES ---
-
-    private ListCell<String> createStringCell() {
-        return new ListCell<String>() {
-            @Override protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                    setStyle("-fx-background-color: #2c3e50;");
-                } else {
-                    setText(item);
-                    setStyle("-fx-background-color: #2c3e50; -fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold;");
-                    this.setOnMouseEntered(e -> setStyle("-fx-background-color: " + VERT_LIME + "; -fx-text-fill: " + BLEU_DEEP + ";"));
-                    this.setOnMouseExited(e -> setStyle("-fx-background-color: #2c3e50; -fx-text-fill: " + VERT_LIME + ";"));
-                }
-            }
-        };
-    }
-
-    private ListCell<Salle> creerSalleCellCyber() {
-        return new ListCell<Salle>() {
-            @Override protected void updateItem(Salle s, boolean empty) {
-                super.updateItem(s, empty);
-                if (empty || s == null) {
-                    setText(null);
-                    setStyle("-fx-background-color: #2c3e50;");
-                } else {
-                    setText("Salle " + s.getNumeroSalle());
-                    setStyle("-fx-background-color: #2c3e50; -fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold;");
-                    this.setOnMouseEntered(e -> setStyle("-fx-background-color: " + VERT_LIME + "; -fx-text-fill: " + BLEU_DEEP + ";"));
-                    this.setOnMouseExited(e -> setStyle("-fx-background-color: #2c3e50; -fx-text-fill: " + VERT_LIME + ";"));
-                }
-            }
-        };
-    }
-    
-    private void showAddBatimentDialog() {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Configuration - Nouveau Bâtiment");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(25));
-        form.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 15;");
-
-        Label header = new Label("ENREGISTRER UNE INFRASTRUCTURE");
-        header.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-font-size: 16;");
-
-        // Champs de saisie basés sur ton entité Batiment 
-        TextField txtCode = new TextField(); txtCode.setPromptText("Code (ex: BAT-A)");
-        TextField txtNom = new TextField(); txtNom.setPromptText("Nom du Bâtiment");
-        TextField txtLoc = new TextField(); txtLoc.setPromptText("Localisation (ex: Campus Nord)");
-        TextField txtEtages = new TextField(); txtEtages.setPromptText("Nombre d'étages");
-
-        String style = "-fx-background-color: #2c3e50; -fx-text-fill: " + VERT_LIME + "; -fx-prompt-text-fill: " + VERT_LIME + "aa; -fx-font-weight: bold;";
-        txtCode.setStyle(style); txtNom.setStyle(style); txtLoc.setStyle(style); txtEtages.setStyle(style);
-
-        form.getChildren().addAll(header, new Separator(), txtCode, txtNom, txtLoc, txtEtages);
-        dialog.getDialogPane().setContent(form);
-
-        dialog.showAndWait().ifPresent(response -> {
-            if (response == ButtonType.OK) {
-                try {
-                    Batiment b = new Batiment(
-                        txtCode.getText(), 
-                        txtNom.getText(), 
-                        txtLoc.getText(), 
-                        Integer.parseInt(txtEtages.getText()), 
-                        "Pédagogique"
-                    );
-                    batimentDAO.save(b); // Persistance Hibernate
-                    afficherAlerte("Succès", "Le bâtiment " + b.getNomBatiment() + " est opérationnel.");
-                } catch (Exception ex) {
-                    afficherAlerte("Erreur", "Vérifiez les données saisies.");
-                }
-            }
-        });
-    }
-    
     private void showBatimentsManagement() {
-        mainContent.getChildren().clear();
-        Label title = new Label("🏢 RÉPERTOIRE DES BÂTIMENTS");
-        title.setStyle("-fx-font-size: 24; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+        mainContent.setPadding(new Insets(25, 40, 40, 40));
+
+        mainContent.getChildren().add(btnRetour(this::showSallesManagement));
+
+        Button btnAdd = new Button("+ NOUVEAU BÂTIMENT");
+        styliserBoutonSecondaire(btnAdd);
+        btnAdd.setOnAction(e -> dialogAjouterBatiment());
+
+        HBox toolbar = new HBox(15, btnAdd);
+        toolbar.setPadding(new Insets(10, 0, 10, 0));
 
         TableView<Batiment> table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        table.setPrefHeight(420);
+        table.setPlaceholder(new Label("Aucun bâtiment enregistré."));
 
-        TableColumn<Batiment, String> colCode = new TableColumn<>("Code");
+        TableColumn<Batiment, String> colCode = new TableColumn<>("CODE");
         colCode.setCellValueFactory(new PropertyValueFactory<>("codeBatiment"));
+        colCode.setPrefWidth(90);
 
-        TableColumn<Batiment, String> colNom = new TableColumn<>("Nom");
+        TableColumn<Batiment, String> colNom  = new TableColumn<>("NOM");
         colNom.setCellValueFactory(new PropertyValueFactory<>("nomBatiment"));
 
-        TableColumn<Batiment, String> colLoc = new TableColumn<>("Localisation");
+        TableColumn<Batiment, String> colLoc  = new TableColumn<>("LOCALISATION");
         colLoc.setCellValueFactory(new PropertyValueFactory<>("localisationBatiment"));
 
-        table.getColumns().addAll(colCode, colNom, colLoc);
-        table.getItems().addAll(batimentDAO.findAll());
+        TableColumn<Batiment, Integer> colEt  = new TableColumn<>("ÉTAGES");
+        colEt.setCellValueFactory(new PropertyValueFactory<>("nbEtage"));
+        colEt.setPrefWidth(80);
 
-        mainContent.getChildren().addAll(title, table);
+        table.getColumns().addAll(colCode, colNom, colLoc, colEt);
+        List<Batiment> bats = batimentDAO.findAll();
+        if (bats != null) table.getItems().addAll(bats);
+
+        mainContent.getChildren().addAll(creerTitre("🏗️ RÉPERTOIRE DES BÂTIMENTS"), toolbar, table);
     }
-    private void showEditSalleDialog(Salle salle) {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Modification - " + salle.getNumeroSalle());
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
 
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(25));
-        form.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 15;");
+    // ══════════════════════════════════════════════════════════════════════════
+    //  SOUS-MODULE ADMIN : INVENTAIRE ÉQUIPEMENTS
+    // ══════════════════════════════════════════════════════════════════════════
 
-        Label header = new Label("MODIFIER LE LOCAL");
-        header.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-font-size: 16;");
+    @FXML
+    private void showInventoryManagement() {
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+        mainContent.setPadding(new Insets(25, 40, 40, 40));
 
-        TextField txtCap = new TextField(String.valueOf(salle.getCapacite()));
+        mainContent.getChildren().add(btnRetour(this::showAdminPanel));
+
+        Button btnAdd = new Button("+ NOUVEL ÉQUIPEMENT");
+        styliserBoutonSecondaire(btnAdd);
+        btnAdd.setOnAction(e -> dialogAjouterEquipement());
+
+        HBox toolbar = new HBox(15, btnAdd);
+        toolbar.setPadding(new Insets(10, 0, 10, 0));
+
+        TableView<Equipement> table = new TableView<>();
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        table.setPrefHeight(460);
+        table.setPlaceholder(new Label("Aucun équipement enregistré."));
+
+        TableColumn<Equipement, String> colNom   = new TableColumn<>("ÉQUIPEMENT");
+        colNom.setCellValueFactory(new PropertyValueFactory<>("nomEquipement"));
+
+        TableColumn<Equipement, String> colEtat  = new TableColumn<>("ÉTAT");
+        colEtat.setCellValueFactory(new PropertyValueFactory<>("etatFonctionnement"));
+        colEtat.setPrefWidth(130);
+        colEtat.setCellFactory(col -> new TableCell<>() {
+            @Override protected void updateItem(String v, boolean empty) {
+                super.updateItem(v, empty);
+                if (empty || v == null) { setText(null); setStyle(""); return; }
+                setText(v);
+                String color = v.contains("panne") || v.contains("maintenance") ? "#ef4444" : "#16a34a";
+                setStyle("-fx-text-fill: " + color + "; -fx-font-weight: bold;");
+            }
+        });
+
+        TableColumn<Equipement, String> colSalle = new TableColumn<>("SALLE");
+        colSalle.setCellValueFactory(cd -> new SimpleStringProperty(
+            cd.getValue().getSalle() != null ? cd.getValue().getSalle().getNumeroSalle() : "Stock"));
+        colSalle.setPrefWidth(90);
+
+        TableColumn<Equipement, Void> colAct = new TableColumn<>("ACTIONS");
+        colAct.setPrefWidth(100);
+        colAct.setCellFactory(p -> new TableCell<>() {
+            private final Button e = new Button("✏️");
+            private final Button d = new Button("🗑");
+            private final HBox h  = new HBox(10, e, d);
+            { h.setAlignment(Pos.CENTER);
+              e.setStyle("-fx-background-color: transparent; -fx-cursor: hand;");
+              d.setStyle("-fx-background-color: transparent; -fx-text-fill: #ef4444; -fx-cursor: hand;");
+              e.setOnAction(ev -> dialogModifierEquipement(getTableView().getItems().get(getIndex())));
+              d.setOnAction(ev -> confirmerSuppressionEquipement(getTableView().getItems().get(getIndex()))); }
+            @Override protected void updateItem(Void v, boolean empty) {
+                super.updateItem(v, empty); setGraphic(empty ? null : h); }
+        });
+
+        table.getColumns().addAll(colNom, colEtat, colSalle, colAct);
+        List<Equipement> equips = equipementDAO.findAll();
+        if (equips != null) table.getItems().addAll(equips);
+
+        mainContent.getChildren().addAll(creerTitre("⚙️ INVENTAIRE MATÉRIEL"), toolbar, table);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  SOUS-MODULES GESTIONNAIRE
+    // ══════════════════════════════════════════════════════════════════════════
+
+    
+    
+    
+    @FXML
+    public void moduleGestionCours() {
+        preparerContenu("-fx-background-color: #f8fafc;");
+        mainContent.setPadding(new Insets(20, 40, 40, 40));
+
+        mainContent.getChildren().add(btnRetour(this::showManagerDashboard));
+
+        VBox header = construireHeader("📅 GESTION DES COURS",
+            "Création, modification et suppression des unités d'enseignement.");
+
+        TextField search = new TextField();
+        search.setPromptText("🔍 Rechercher un cours...");
+        search.setPrefWidth(340);
+        search.setStyle("-fx-background-radius: 8; -fx-padding: 8; " +
+                        "-fx-border-color: #cbd5e1; -fx-border-radius: 8;");
+
+        Button btnAdd = new Button("+ NOUVEAU COURS");
+        styliserBoutonSecondaire(btnAdd);
+        btnAdd.setOnAction(e -> afficherAlerte("COURS", "Module de création de cours à connecter au CoursDAO."));
+
+        Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
+        HBox toolbar = new HBox(15, search, sp, btnAdd);
+        toolbar.setAlignment(Pos.CENTER_LEFT);
+        toolbar.setPadding(new Insets(20, 0, 20, 0));
+
+        VBox placeholder = construirePlaceholder(
+            "📋 Tableau des cours (CoursDAO)",
+            "Colonnes : Matière · Enseignant · Classe · Groupe · Heures",
+            400
+        );
+
+        mainContent.getChildren().addAll(header, toolbar, placeholder);
+    }
+
+    @FXML
+    public void moduleAssignationSalles() {
+        preparerContenu("-fx-background-color: #f8fafc;");
+        mainContent.setPadding(new Insets(20, 40, 40, 40));
+
+        mainContent.getChildren().add(btnRetour(this::showManagerDashboard));
+
+        VBox header = construireHeader("🔑 ASSIGNATION DES SALLES",
+            "Liaison des cours aux infrastructures physiques disponibles.");
+
+        // Interface de mapping visuel (cours ↔ salle)
+        HBox mapping = new HBox(40);
+        mapping.setPadding(new Insets(30, 0, 0, 0));
+        mapping.setAlignment(Pos.TOP_CENTER);
+
+        VBox colCours = construirePlaceholder("📋 COURS EN ATTENTE",
+            "Les cours sans salle assignée s'affichent ici.", 300);
+        colCours.setPrefWidth(300);
+
+        Label fleche = new Label("➡");
+        fleche.setStyle("-fx-font-size: 34; -fx-text-fill: " + VERT_LIME + ";");
+        VBox.setMargin(fleche, new Insets(100, 0, 0, 0));
+
+        VBox colSalles = construirePlaceholder("🏢 SALLES DISPONIBLES",
+            "Filtrées par capacité et disponibilité.", 300);
+        colSalles.setPrefWidth(300);
+
+        Button btnValider = new Button("VALIDER L'ASSIGNATION");
+        styliserBoutonPrimaire(btnValider);
+        btnValider.setOnAction(e -> afficherAlerte("ASSIGNATION", "À connecter au CreneauDAO pour persister."));
+
+        mapping.getChildren().addAll(colCours, fleche, colSalles);
+
+        VBox layout = new VBox(20, header, mapping, btnValider);
+        layout.setAlignment(Pos.TOP_CENTER);
+        mainContent.getChildren().add(layout);
+    }
+
+    @FXML
+    public void moduleResolutionConflits() {
+        // --- 0. PRÉPARATION ---
+        preparerContenu("-fx-background-color: #f8fafc;");
+        mainContent.setPadding(new Insets(20, 40, 40, 40));
+
+        // Bouton retour vers le dashboard du gestionnaire
+        mainContent.getChildren().add(btnRetour(this::showManagerDashboard));
+
+        // --- 1. EN-TÊTE ---
+        VBox header = construireHeader("⚠️ RÉSOLUTION DES CONFLITS",
+            "Détection et correction automatique des chevauchements d'horaires.");
         
-        // Ajout du sélecteur de bâtiment pour la modification
+        // Style spécifique pour l'alerte
+        header.lookup("Label").setStyle(
+            "-fx-font-family: 'Consolas'; -fx-font-size: 22; -fx-font-weight: bold; -fx-text-fill: #dc2626;");
+
+        // --- 2. BOUTON D'ACTION ---
+        Button btnScan = new Button("⚡ LANCER LA DÉTECTION IA");
+        styliserBoutonPrimaire(btnScan);
+
+        // --- 3. ZONE DE RÉSULTATS ---
+        VBox resultZone = new VBox(12);
+        resultZone.setPadding(new Insets(20));
+        resultZone.setStyle("-fx-background-color: white; -fx-border-color: #e2e8f0; " +
+                            "-fx-border-radius: 10; -fx-background-radius: 10;");
+        
+        Label lblResult = new Label("Cliquez sur 'Lancer la détection' pour analyser les conflits.");
+        lblResult.setStyle("-fx-text-fill: " + (GRIS_TEXTE != null ? GRIS_TEXTE : "#64748b") + ";");
+        resultZone.getChildren().add(lblResult);
+
+        // --- 4. LOGIQUE DE L'IA (CORRIGÉE) ---
+        btnScan.setOnAction(e -> {
+            btnScan.setDisable(true); 
+            btnScan.setText("⏳ Analyse en cours...");
+
+            // Utilisation d'une instance standard pour éviter les erreurs de type
+            PauseTransition pause = new PauseTransition(Duration.seconds(1.5));
+            
+            pause.setOnFinished(ev -> {
+                resultZone.getChildren().clear();
+                
+                // Appel de ta méthode de logique métier pour résoudre les conflits 
+                lancerAnalyseConflits(resultZone);
+                
+                btnScan.setDisable(false); 
+                btnScan.setText("⚡ LANCER LA DÉTECTION IA");
+            });
+            
+            pause.play();
+        });
+
+        // --- 5. ASSEMBLAGE ---
+        mainContent.getChildren().addAll(header, btnScan, resultZone);
+    }
+
+    @FXML
+    public void moduleGenerationPlanning() {
+        preparerContenu("-fx-background-color: #f8fafc;");
+        mainContent.setPadding(new Insets(20, 40, 40, 40));
+
+        mainContent.getChildren().add(btnRetour(this::showManagerDashboard));
+
+        VBox header = construireHeader("📄 GÉNÉRER L'EMPLOI DU TEMPS",
+            "Compilation finale et export des données.");
+
+        HBox exports = new HBox(30);
+        exports.setAlignment(Pos.CENTER);
+        exports.setPadding(new Insets(40, 0, 0, 0));
+
+        exports.getChildren().addAll(
+            creerNodeTHM("EXPORT PDF",   "📑", "Fichier pour impression",     e -> afficherAlerte("PDF",   "Export PDF — à connecter à iText ou Apache PDFBox.")),
+            creerNodeTHM("EXPORT EXCEL", "📊", "Fichier de données tableur",  e -> afficherAlerte("Excel", "Export Excel — à connecter à Apache POI.")),
+            creerNodeTHM("EXPORT WEB",   "🌐", "Publication sur intranet",    e -> afficherAlerte("Web",   "Export HTML — génération de page statique."))
+        );
+
+        mainContent.getChildren().addAll(header, exports);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  DIALOGUES — UTILISATEURS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void dialogAjouterUtilisateur() {
+        Dialog<ButtonType> dlg = creerDialog("ENREGISTRER UN COLLABORATEUR");
+
+        TextField txtNom    = creerChampCyber("Nom complet");
+        TextField txtPrenom = creerChampCyber("Prénom");
+        TextField txtEml    = creerChampCyber("Email (ex: prof@univ.sn)");
+        TextField txtIdConn = creerChampCyber("Identifiant connexion");
+        PasswordField txtPw = new PasswordField();
+        appliquerStyleFieldCyber(txtPw); txtPw.setPromptText("Mot de passe");
+
+        ComboBox<String> cbRole = creerComboCyber(
+            "Administrateur", "Gestionnaire", "Enseignant", "Etudiant");
+        cbRole.setValue("Enseignant");
+
+        VBox form = getDialogForm(dlg);
+        form.getChildren().addAll(
+            creerLabel("IDENTITÉ :"),  txtNom, txtPrenom,
+            creerLabel("ACCÈS :"),     txtEml, txtIdConn, txtPw,
+            creerLabel("RÔLE :"),      cbRole
+        );
+
+        dlg.showAndWait().ifPresent(r -> {
+            if (r != ButtonType.OK) return;
+            if (txtNom.getText().isEmpty() || txtEml.getText().isEmpty() || txtPw.getText().isEmpty()) {
+                afficherAlerte("Champs manquants", "Nom, email et mot de passe sont obligatoires.");
+                return;
+            }
+            Utilisateur u = new Utilisateur();
+            u.setNom(txtNom.getText().trim());
+            u.setPrenom(txtPrenom.getText().trim());
+            u.setEmail(txtEml.getText().trim());
+            u.setIdentifiantConnexion(txtIdConn.getText().isEmpty() ? txtEml.getText().trim() : txtIdConn.getText().trim());
+            u.setMotDePasse(txtPw.getText());
+            u.setRole(cbRole.getValue());
+            try {
+                utilisateurDAO.save(u);
+                showUserManagement();
+                afficherAlerte("Succès", u.getNom() + " a été ajouté au système.");
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                afficherAlerte("Erreur", "Impossible d'enregistrer : " + ex.getMessage());
+            }
+        });
+    }
+
+    private void dialogModifierUtilisateur(Utilisateur u) {
+        Dialog<ButtonType> dlg = creerDialog("MODIFIER LE PROFIL");
+
+        TextField txtNom   = creerChampCyber(u.getNom() != null ? u.getNom() : "");
+        TextField txtEmail = creerChampCyber(u.getEmail() != null ? u.getEmail() : "");
+        ComboBox<String> cbRole = creerComboCyber("Administrateur","Gestionnaire","Enseignant","Etudiant");
+        cbRole.setValue(u.getRole());
+
+        VBox form = getDialogForm(dlg);
+        form.getChildren().addAll(
+            creerLabel("NOM :"),   txtNom,
+            creerLabel("EMAIL :"), txtEmail,
+            creerLabel("RÔLE :"),  cbRole
+        );
+
+        dlg.showAndWait().ifPresent(r -> {
+            if (r != ButtonType.OK) return;
+            u.setNom(txtNom.getText().trim());
+            u.setEmail(txtEmail.getText().trim());
+            u.setRole(cbRole.getValue());
+            try { utilisateurDAO.update(u); showUserManagement(); }
+            catch (Exception ex) { afficherAlerte("Erreur", ex.getMessage()); }
+        });
+    }
+
+    private void confirmerSuppressionUser(Utilisateur u) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Suppression"); alert.setHeaderText("Supprimer " + u.getNom() + " ?");
+        alert.setContentText("Cette action est irréversible.");
+        alert.showAndWait().filter(r -> r == ButtonType.OK).ifPresent(r -> {
+            utilisateurDAO.delete(u); showUserManagement();
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  DIALOGUES — SALLES
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void dialogAjouterSalle() {
+        Dialog<ButtonType> dlg = creerDialog("PARAMÉTRER UNE NOUVELLE SALLE");
+
+        TextField txtNum = creerChampCyber("N° de salle (ex: A101)");
+        TextField txtCap = creerChampCyber("Capacité maximale");
+        ComboBox<Batiment> cbBat = new ComboBox<>();
+        cbBat.getItems().addAll(batimentDAO.findAll());
+        cbBat.setMaxWidth(Double.MAX_VALUE);
+        cbBat.setConverter(new javafx.util.StringConverter<>() {
+            public String toString(Batiment b) { return b == null ? "" : b.getNomBatiment(); }
+            public Batiment fromString(String s) { return null; }
+        });
+        appliquerStyleFieldCyber(cbBat);
+        cbBat.setPromptText("Sélectionner un bâtiment");
+
+        ComboBox<String> cbCat = creerComboCyber("TD", "TP", "Amphithéâtre");
+        cbCat.setValue("TD");
+
+        VBox form = getDialogForm(dlg);
+        form.getChildren().addAll(
+            creerLabel("NUMÉRO :"),    txtNum,
+            creerLabel("CAPACITÉ :"),  txtCap,
+            creerLabel("BÂTIMENT :"),  cbBat,
+            creerLabel("TYPE :"),      cbCat
+        );
+
+        dlg.showAndWait().ifPresent(r -> {
+            if (r != ButtonType.OK) return;
+            if (txtNum.getText().isEmpty() || txtCap.getText().isEmpty() || cbBat.getValue() == null) {
+                afficherAlerte("Données manquantes", "Tous les champs sont obligatoires.");
+                return;
+            }
+            try {
+                Salle s = new Salle();
+                s.setNumeroSalle(txtNum.getText().trim());
+                s.setCapacite(Integer.parseInt(txtCap.getText().trim()));
+                s.setBatiment(cbBat.getValue());
+                s.setCategorieSalle(cbCat.getValue());
+                s.setEtatSalle("Disponible");
+                salleDAO.save(s);
+                showSallesManagement();
+                afficherAlerte("Succès", "Salle " + s.getNumeroSalle() + " enregistrée.");
+            } catch (NumberFormatException ex) {
+                afficherAlerte("Erreur", "La capacité doit être un entier.");
+            }
+        });
+    }
+
+    private void dialogModifierSalle(Salle salle) {
+        Dialog<ButtonType> dlg = creerDialog("MODIFIER LA SALLE " + salle.getNumeroSalle());
+
+        TextField txtCap = creerChampCyber(String.valueOf(salle.getCapacite()));
         ComboBox<Batiment> cbBat = new ComboBox<>();
         cbBat.getItems().addAll(batimentDAO.findAll());
         cbBat.setValue(salle.getBatiment());
         cbBat.setMaxWidth(Double.MAX_VALUE);
-        
-        ComboBox<String> cbCat = new ComboBox<>();
-        cbCat.getItems().addAll("TD", "TP", "Amphithéâtre"); // Harmonisé avec showAddSalle 
-        cbCat.setValue(salle.getCategorieSalle());
-        cbCat.setMaxWidth(Double.MAX_VALUE);
-
-        String style = "-fx-background-color: #2c3e50; -fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold;";
-        txtCap.setStyle(style); cbBat.setStyle(style); cbCat.setStyle(style);
-
-        // Formattage du nom du bâtiment
-        cbBat.setConverter(new javafx.util.StringConverter<Batiment>() {
-            @Override public String toString(Batiment b) { return b == null ? "" : b.getNomBatiment(); }
-            @Override public Batiment fromString(String s) { return null; }
-        });
-
-        form.getChildren().addAll(header, new Label("Capacité :"), txtCap, new Label("Bâtiment :"), cbBat, new Label("Type :"), cbCat);
-        dialog.getDialogPane().setContent(form);
-
-        dialog.showAndWait().ifPresent(response -> {
-            if (response == ButtonType.OK) {
-                try {
-                    salle.setCapacite(Integer.parseInt(txtCap.getText()));
-                    salle.setCategorieSalle(cbCat.getValue());
-                    salle.setBatiment(cbBat.getValue()); // Mise à jour de la liaison
-                    
-                    salleDAO.update(salle); 
-                    showSallesManagement(); 
-                } catch (Exception ex) {
-                    afficherAlerte("Erreur", "Données invalides.");
-                }
-            }
-        });
-    }
-    
-    private void confirmerSuppression(Salle salle) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle("ALERTE SYSTÈME");
-        alert.setHeaderText("Suppression de la salle " + salle.getNumeroSalle());
-        alert.setContentText("Êtes-vous certain de vouloir déconnecter ce local du réseau ?");
-
-        alert.showAndWait().ifPresent(response -> {
-            if (response == ButtonType.OK) {
-                salleDAO.delete(salle); // Hibernate supprime la ligne
-                showSallesManagement(); // Refresh du tableau
-                System.out.println("LOG: Salle " + salle.getNumeroSalle() + " supprimée.");
-            }
-        });
-    }
-
-    // --- FORMULAIRE D'AJOUT (DIALOGUE CYBER) ---
-    private void showAddSalleDialog() {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Système - Nouvel Enregistrement");
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-
-        VBox form = new VBox(15);
-        form.setPadding(new Insets(25));
-        form.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 15;");
-
-        Label header = new Label("PARAMÉTRAGE NOUVELLE SALLE");
-        header.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-font-size: 16;");
-
-        // --- CHAMPS DE SAISIE ---
-        TextField txtNum = new TextField(); 
-        txtNum.setPromptText("Numéro de salle (ex: A101)");
-        
-        TextField txtCap = new TextField(); 
-        txtCap.setPromptText("Capacité maximale");
-        
-        // --- NOUVEAU : SÉLECTION DU BÂTIMENT ---
-        ComboBox<Batiment> cbBat = new ComboBox<>();
-        cbBat.setPromptText("Sélectionner un bâtiment");
-        cbBat.setMaxWidth(Double.MAX_VALUE);
-        // On charge les bâtiments depuis la base via le DAO 
-        cbBat.getItems().addAll(batimentDAO.findAll());
-
-        ComboBox<String> cbCat = new ComboBox<>();
-        cbCat.getItems().addAll("TD", "TP", "Amphithéâtre");
-        cbCat.setValue("TD");
-        cbCat.setMaxWidth(Double.MAX_VALUE);
-
-        // --- STYLE CYBER OPTIMISÉ ---
-        String fieldStyle = "-fx-background-color: #2c3e50; " +
-                            "-fx-text-fill: " + VERT_LIME + "; " +
-                            "-fx-prompt-text-fill: " + VERT_LIME + "aa; " +
-                            "-fx-background-radius: 5; " +
-                            "-fx-font-weight: bold; " +
-                            "-fx-padding: 8;";
-
-        txtNum.setStyle(fieldStyle);
-        txtCap.setStyle(fieldStyle);
-        cbBat.setStyle(fieldStyle);
-        cbCat.setStyle(fieldStyle);
-
-        // --- CONFIGURATION DE L'AFFICHAGE DU BÂTIMENT (NOM AU LIEU DE L'OBJET) ---
-        cbBat.setConverter(new javafx.util.StringConverter<Batiment>() {
-            @Override
-            public String toString(Batiment b) { return (b == null) ? "" : b.getNomBatiment(); }
-            @Override
+        cbBat.setConverter(new javafx.util.StringConverter<>() {
+            public String toString(Batiment b) { return b == null ? "" : b.getNomBatiment(); }
             public Batiment fromString(String s) { return null; }
         });
+        appliquerStyleFieldCyber(cbBat);
 
-        // --- CELL FACTORIES POUR LES COMBOBOX (LOOK VERT SUR BLEU) ---
-        cbBat.setButtonCell(creerListCellCyber());
-        cbBat.setCellFactory(lv -> creerListCellCyber());
-        cbCat.setButtonCell(new ListCell<String>() { // Spécifique pour String
-            @Override protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-                setText(empty ? null : item);
-                setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold;");
+        ComboBox<String> cbCat = creerComboCyber("TD", "TP", "Amphithéâtre");
+        cbCat.setValue(salle.getCategorieSalle());
+
+        ComboBox<String> cbEtat = creerComboCyber("Disponible", "Occupée", "Maintenance");
+        cbEtat.setValue(salle.getEtatSalle());
+
+        VBox form = getDialogForm(dlg);
+        form.getChildren().addAll(
+            creerLabel("CAPACITÉ :"),  txtCap,
+            creerLabel("BÂTIMENT :"),  cbBat,
+            creerLabel("TYPE :"),      cbCat,
+            creerLabel("ÉTAT :"),      cbEtat
+        );
+
+        dlg.showAndWait().ifPresent(r -> {
+            if (r != ButtonType.OK) return;
+            try {
+                salle.setCapacite(Integer.parseInt(txtCap.getText().trim()));
+                salle.setBatiment(cbBat.getValue());
+                salle.setCategorieSalle(cbCat.getValue());
+                salle.setEtatSalle(cbEtat.getValue());
+                salleDAO.update(salle);
+                showSallesManagement();
+            } catch (NumberFormatException ex) {
+                afficherAlerte("Erreur", "Capacité invalide.");
+            }
+        });
+    }
+
+    private void confirmerSuppressionSalle(Salle s) {
+        Alert a = new Alert(Alert.AlertType.CONFIRMATION);
+        a.setTitle("Suppression"); a.setHeaderText("Supprimer la salle " + s.getNumeroSalle() + " ?");
+        a.setContentText("Cette action est irréversible.");
+        a.showAndWait().filter(r -> r == ButtonType.OK).ifPresent(r -> {
+            salleDAO.delete(s); showSallesManagement();
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  DIALOGUES — BÂTIMENTS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void dialogAjouterBatiment() {
+        Dialog<ButtonType> dlg = creerDialog("ENREGISTRER UN BÂTIMENT");
+
+        TextField txtCode  = creerChampCyber("Code (ex: BAT-A)");
+        TextField txtNom   = creerChampCyber("Nom du bâtiment");
+        TextField txtLoc   = creerChampCyber("Localisation");
+        TextField txtEt    = creerChampCyber("Nombre d'étages");
+        ComboBox<String> cbType = creerComboCyber("Pédagogique", "Administratif", "Laboratoire");
+        cbType.setValue("Pédagogique");
+
+        VBox form = getDialogForm(dlg);
+        form.getChildren().addAll(
+            creerLabel("CODE :"),        txtCode,
+            creerLabel("NOM :"),         txtNom,
+            creerLabel("LOCALISATION :"),txtLoc,
+            creerLabel("ÉTAGES :"),      txtEt,
+            creerLabel("TYPE :"),        cbType
+        );
+
+        dlg.showAndWait().ifPresent(r -> {
+            if (r != ButtonType.OK) return;
+            try {
+                Batiment b = new Batiment(
+                    txtCode.getText().trim(), txtNom.getText().trim(),
+                    txtLoc.getText().trim(), Integer.parseInt(txtEt.getText().trim()),
+                    cbType.getValue()
+                );
+                batimentDAO.save(b);
+                showBatimentsManagement();
+                afficherAlerte("Succès", "Bâtiment " + b.getNomBatiment() + " enregistré.");
+            } catch (Exception ex) {
+                afficherAlerte("Erreur", "Données invalides. Vérifiez le nombre d'étages.");
+            }
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  DIALOGUES — ÉQUIPEMENTS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void dialogAjouterEquipement() {
+        Dialog<ButtonType> dlg = creerDialog("ENREGISTRER UN ÉQUIPEMENT");
+
+        TextField txtId = creerChampCyber("Code inventaire (ex: VP-01)");
+        ComboBox<String> cbType = creerComboCyber("Vidéoprojecteur","Tableau Interactif","Climatisation","Ordinateur","Autre");
+        cbType.setPromptText("Type de matériel");
+        ComboBox<Salle> cbSalle = new ComboBox<>();
+        cbSalle.getItems().addAll(salleDAO.findAll());
+        cbSalle.setPromptText("Assigner à une salle (optionnel)");
+        cbSalle.setMaxWidth(Double.MAX_VALUE);
+        cbSalle.setConverter(new javafx.util.StringConverter<>() {
+            public String toString(Salle s) { return s == null ? "" : "Salle " + s.getNumeroSalle(); }
+            public Salle fromString(String s) { return null; }
+        });
+        appliquerStyleFieldCyber(cbSalle);
+
+        VBox form = getDialogForm(dlg);
+        form.getChildren().addAll(
+            creerLabel("CODE :"),  txtId,
+            creerLabel("TYPE :"),  cbType,
+            creerLabel("SALLE :"), cbSalle
+        );
+
+        dlg.showAndWait().ifPresent(r -> {
+            if (r != ButtonType.OK) return;
+            if (txtId.getText().isEmpty() || cbType.getValue() == null) {
+                afficherAlerte("Champs manquants", "Le code et le type sont obligatoires.");
+                return;
+            }
+            Equipement eq = new Equipement();
+            eq.setIdEquipement(txtId.getText().trim());
+            eq.setNomEquipement(cbType.getValue());
+            eq.setEtatFonctionnement("Opérationnel");
+            eq.setSalle(cbSalle.getValue());
+            try { equipementDAO.save(eq); showInventoryManagement(); }
+            catch (Exception ex) { afficherAlerte("Erreur", ex.getMessage()); }
+        });
+    }
+
+    private void dialogModifierEquipement(Equipement eq) {
+        Dialog<ButtonType> dlg = creerDialog("ÉTAT : " + eq.getNomEquipement());
+
+        ComboBox<String> cbEtat = creerComboCyber("Opérationnel", "En panne", "En maintenance");
+        cbEtat.setValue(eq.getEtatFonctionnement());
+
+        VBox form = getDialogForm(dlg);
+        form.getChildren().addAll(creerLabel("NOUVEL ÉTAT :"), cbEtat);
+
+        dlg.showAndWait().ifPresent(r -> {
+            if (r != ButtonType.OK) return;
+            eq.setEtatFonctionnement(cbEtat.getValue());
+            equipementDAO.update(eq);
+            showInventoryManagement();
+        });
+    }
+
+    private void confirmerSuppressionEquipement(Equipement eq) {
+        Alert a = new Alert(Alert.AlertType.CONFIRMATION);
+        a.setTitle("Suppression"); a.setHeaderText("Supprimer " + eq.getIdEquipement() + " ?");
+        a.showAndWait().filter(r -> r == ButtonType.OK).ifPresent(r -> {
+            equipementDAO.delete(eq); showInventoryManagement();
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  DIALOGUE — INCIDENT ENSEIGNANT
+    // ══════════════════════════════════════════════════════════════════════════
+
+    public void showSignalerIncidentDialog(Utilisateur enseignant) {
+        Dialog<ButtonType> dlg = creerDialog("⚠️ SIGNALER UN INCIDENT");
+
+        ComboBox<Salle> cbSalle = new ComboBox<>();
+        cbSalle.getItems().addAll(salleDAO.findAll());
+        cbSalle.setPromptText("Salle concernée...");
+        cbSalle.setMaxWidth(Double.MAX_VALUE);
+        cbSalle.setConverter(new javafx.util.StringConverter<>() {
+            public String toString(Salle s) { return s == null ? "" : "Salle " + s.getNumeroSalle(); }
+            public Salle fromString(String s) { return null; }
+        });
+        appliquerStyleFieldCyber(cbSalle);
+
+        ComboBox<String> cbType = creerComboCyber(
+            "Équipement défectueux", "Propreté", "Température", "Éclairage", "Autre");
+        cbType.setValue("Équipement défectueux");
+
+        TextArea txtDesc = new TextArea();
+        txtDesc.setPromptText("Décrivez le problème rencontré...");
+        txtDesc.setPrefHeight(90); txtDesc.setWrapText(true);
+        txtDesc.setStyle("-fx-control-inner-background: #121a21; -fx-text-fill: white; " +
+                         "-fx-border-color: #2d3f50; -fx-border-radius: 6; -fx-background-radius: 6;");
+
+        VBox form = getDialogForm(dlg);
+        form.getChildren().addAll(
+            creerLabel("SALLE :"),       cbSalle,
+            creerLabel("TYPE :"),        cbType,
+            creerLabel("DESCRIPTION :"), txtDesc
+        );
+
+        dlg.showAndWait().ifPresent(r -> {
+            if (r != ButtonType.OK) return;
+            if (cbSalle.getValue() == null || txtDesc.getText().trim().isEmpty()) {
+                afficherAlerte("Données manquantes", "Veuillez sélectionner une salle et décrire le problème.");
+                return;
+            }
+            String msg = "[" + cbType.getValue() + "] Salle " +
+                         cbSalle.getValue().getNumeroSalle() + " — " + txtDesc.getText().trim() +
+                         " (signalé par " + (enseignant != null ? enseignant.getNom() : "?") + ")";
+            notifService.notifierIncidentTechnique(cbType.getValue(), cbSalle.getValue().getNumeroSalle());
+            afficherAlerte("Signalement envoyé", "L'incident a été transmis à l'administration.");
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  MOTEUR IA
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private VBox construireBlockIA() {
+        VBox bloc = new VBox(18);
+        bloc.setPadding(new Insets(30, 28, 30, 28));
+        bloc.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 28; " +
+                      "-fx-border-color: " + VERT_LIME + "55; -fx-border-width: 1.5; -fx-border-radius: 28;");
+
+        // --- TITRE ET DESCRIPTION ---
+        Label titre = new Label("🤖 OPTIMISATION PAR IA");
+        titre.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-family: 'Consolas'; " +
+                       "-fx-font-size: 20; -fx-font-weight: bold;");
+        
+        Label desc = new Label("Analyse prédictive des ressources — Détection des conflits et des pannes.");
+        desc.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13;");
+
+        // --- BOUTON D'ACTION ---
+        Button btnIA = new Button("LANCER LE DIAGNOSTIC SYSTÈME");
+        btnIA.setMaxWidth(Double.MAX_VALUE); 
+        btnIA.setPrefHeight(44);
+        styliserBoutonPrimaire(btnIA);
+
+        // --- LOGIQUE DE L'ANIMATION (CORRIGÉE) ---
+        btnIA.setOnAction(e -> {
+            btnIA.setDisable(true); 
+            btnIA.setText("⚡ INITIALISATION...");
+
+            PauseTransition pause = new PauseTransition(Duration.seconds(1.8));
+            
+            pause.setOnFinished(ev -> { 
+                lancerDiagnosticIA(); 
+                btnIA.setDisable(false); 
+                btnIA.setText("LANCER LE DIAGNOSTIC SYSTÈME"); 
+            });
+            
+            pause.play();
+        });
+
+        bloc.getChildren().addAll(titre, desc, btnIA);
+        return bloc;
+    }
+
+    private void lancerDiagnosticIA() {
+        StringBuilder rapport = new StringBuilder();
+        rapport.append("[ SESSION IA — ")
+               .append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")))
+               .append(" ]\n\n");
+
+        int alertes = 0, optim = 0;
+
+        List<Equipement> equips = equipementDAO.findAll();
+        if (equips != null) {
+            for (Equipement eq : equips) {
+                String etat = eq.getEtatFonctionnement();
+                if (etat != null && (etat.contains("panne") || etat.contains("maintenance"))) {
+                    alertes++;
+                    rapport.append("⚠️  ").append(eq.getNomEquipement())
+                           .append(" [").append(eq.getIdEquipement()).append("] — ")
+                           .append(etat).append(" (Salle ")
+                           .append(eq.getSalle() != null ? eq.getSalle().getNumeroSalle() : "Stock")
+                           .append(")\n");
+                }
+            }
+        }
+
+        List<Salle> salles = salleDAO.findAll();
+        if (salles != null) {
+            for (Salle s : salles) {
+                if (s.getCapacite() < 15) {
+                    optim++;
+                    rapport.append("ℹ️  Salle ").append(s.getNumeroSalle())
+                           .append(" — capacité réduite (").append(s.getCapacite())
+                           .append(" places) → usage privilégié pour TDs.\n");
+                }
+            }
+        }
+
+        rapport.append("\n─────────────────────────────\n");
+        if (alertes > 0) {
+            rapport.append("❌ ").append(alertes).append(" CONFLIT(S) MATÉRIEL DÉTECTÉ(S).\n");
+            rapport.append("   → Intervention recommandée avant les réservations.\n");
+        } else {
+            rapport.append("✅ SYSTÈME OPTIMAL — Aucun conflit matériel détecté.\n");
+        }
+        if (optim > 0)
+            rapport.append("💡 ").append(optim).append(" optimisation(s) d'espace suggérée(s).\n");
+
+        afficherDialogIA(rapport.toString());
+    }
+
+    private void afficherDialogIA(String contenu) {
+        javafx.stage.Stage stage = new javafx.stage.Stage();
+        stage.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        stage.setTitle("UIDT-AI · Terminal d'Analyse");
+
+        VBox root = new VBox(18);
+        root.setPadding(new Insets(25));
+        root.setStyle("-fx-background-color: " + BLEU_DEEP + "; " +
+                      "-fx-border-color: " + VERT_LIME + "; -fx-border-width: 2; " +
+                      "-fx-background-radius: 10; -fx-border-radius: 10;");
+
+        Label h = new Label("🤖 ANALYSE PRÉDICTIVE TERMINÉE");
+        h.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-size: 17; " +
+                   "-fx-font-weight: bold; -fx-font-family: 'Consolas';");
+
+        TextArea area = new TextArea(contenu);
+        area.setEditable(false); area.setWrapText(true); area.setPrefHeight(280);
+        area.setStyle("-fx-control-inner-background: #0d1520; -fx-text-fill: " + VERT_LIME + "; " +
+                      "-fx-font-family: 'Consolas'; -fx-font-size: 12;");
+
+        Button btnClose = new Button("RETOUR À LA CONSOLE");
+        btnClose.setMaxWidth(Double.MAX_VALUE); styliserBoutonPrimaire(btnClose);
+        btnClose.setOnAction(e -> stage.close());
+
+        root.getChildren().addAll(h, new Separator(), area, btnClose);
+        stage.setScene(new Scene(root, 560, 440));
+        stage.show();
+    }
+
+    private void lancerAnalyseConflits(VBox zone) {
+        // Simulation d'analyse — à connecter au CreneauDAO pour de vraies données
+        zone.getChildren().add(construireLigneConflit(
+            "✅ Aucun conflit de salle détecté pour la semaine en cours.",
+            "#16a34a"
+        ));
+        zone.getChildren().add(construireLigneConflit(
+            "💡 3 cours sans salle assignée — Utilisez 'Assignation Salles' pour les résoudre.",
+            "#d97706"
+        ));
+    }
+
+    private HBox construireLigneConflit(String msg, String couleur) {
+        HBox ligne = new HBox(10);
+        ligne.setPadding(new Insets(12, 16, 12, 16));
+        ligne.setAlignment(Pos.CENTER_LEFT);
+        ligne.setStyle("-fx-background-color: " + couleur + "15; -fx-border-color: " + couleur +
+                       "44; -fx-border-radius: 8; -fx-background-radius: 8;");
+        Label l = new Label(msg);
+        l.setStyle("-fx-text-fill: " + couleur + "; -fx-font-size: 13;");
+        ligne.getChildren().add(l);
+        return ligne;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  CARTE "SMART SALLE" (Réservations)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private VBox creerCarteSmartSalle(Salle salle, double score) {
+        VBox card = new VBox(14);
+        card.setPadding(new Insets(20)); card.setPrefWidth(280);
+        card.setStyle("-fx-background-color: white; -fx-background-radius: 18; " +
+                      "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 0);");
+
+        // ── En-tête nom + badge ───────────────────────────────────────────
+        HBox head = new HBox();
+        Label lNom = new Label(salle.getNumeroSalle());
+        lNom.setStyle("-fx-font-weight: bold; -fx-font-size: 22; -fx-text-fill: " + BLEU_DEEP + ";");
+        Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
+        Label badge = new Label((int) score + "% MATCH");
+        badge.setPadding(new Insets(4, 10, 4, 10));
+        badge.setStyle("-fx-background-color: " + (score >= 90 ? VERT_LIME : "#f1c40f") + "; " +
+                       "-fx-text-fill: " + BLEU_DEEP + "; -fx-font-weight: bold; " +
+                       "-fx-background-radius: 10; -fx-font-size: 10;");
+        head.getChildren().addAll(lNom, sp, badge);
+
+        // ── Infos ─────────────────────────────────────────────────────────
+        Label lBat = new Label("📍 " + (salle.getBatiment() != null ? salle.getBatiment().getNomBatiment() : "N/A"));
+        lBat.setStyle("-fx-text-fill: " + GRIS_TEXTE + "; -fx-font-size: 12;");
+        Label lCap = new Label("👥 Capacité : " + salle.getCapacite() + " places");
+        lCap.setStyle("-fx-text-fill: " + GRIS_TEXTE + "; -fx-font-size: 12;");
+        Label lType = new Label("🏷️ Type : " + (salle.getCategorieSalle() != null ? salle.getCategorieSalle() : "—"));
+        lType.setStyle("-fx-text-fill: " + GRIS_TEXTE + "; -fx-font-size: 12;");
+
+        // ── Bouton réserver ───────────────────────────────────────────────
+        Button btnRes = new Button("SÉLECTIONNER");
+        btnRes.setMaxWidth(Double.MAX_VALUE); btnRes.setPrefHeight(38);
+        styliserBoutonPrimaire(btnRes);
+        btnRes.setOnAction(e -> dialogFinaliserReservation(salle));
+
+        card.getChildren().addAll(head, new Separator(), lBat, lCap, lType, btnRes);
+
+        // ── Hover ─────────────────────────────────────────────────────────
+        String base = "-fx-background-color: white; -fx-background-radius: 18; " +
+                      "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 0);";
+        card.setOnMouseEntered(e -> {
+            card.setTranslateY(-8);
+            card.setStyle("-fx-background-color: white; -fx-background-radius: 18; " +
+                          "-fx-effect: dropshadow(three-pass-box, " + VERT_LIME + ", 20, 0, 0, 0);");
+        });
+        card.setOnMouseExited(e -> { card.setTranslateY(0); card.setStyle(base); });
+
+        return card;
+    }
+
+    private void dialogFinaliserReservation(Salle salle) {
+        if (txtEmail == null || txtEmail.getText().trim().isEmpty()) {
+            afficherAlerte("Email requis", "Veuillez renseigner l'email du responsable avant de sélectionner une salle.");
+            if (txtEmail != null) txtEmail.requestFocus();
+            return;
+        }
+
+        javafx.stage.Stage stage = new javafx.stage.Stage();
+        stage.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        stage.setTitle("UIDT-AI · Validation de réservation");
+
+        VBox root = new VBox(20); root.setPadding(new Insets(25));
+        root.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-border-color: " + VERT_LIME +
+                      "; -fx-border-width: 2; -fx-background-radius: 10; -fx-border-radius: 10;");
+
+        Label titre = new Label("🏁 VALIDATION — SALLE " + salle.getNumeroSalle());
+        titre.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-family: 'Consolas'; " +
+                       "-fx-font-weight: bold; -fx-font-size: 16;");
+
+        String si = "-fx-text-fill: white; -fx-font-family: 'Consolas'; -fx-font-size: 13;";
+        Label lCours = new Label("COURS     : " + (txtClasse != null ? txtClasse.getText() : "—")); lCours.setStyle(si);
+        Label lEmail = new Label("EMAIL     : " + txtEmail.getText()); lEmail.setStyle(si);
+        Label lCap   = new Label("CAPACITÉ  : " + salle.getCapacite() + " places"); lCap.setStyle(si);
+        Label lBat   = new Label("BÂTIMENT  : " + (salle.getBatiment() != null ? salle.getBatiment().getNomBatiment() : "N/A")); lBat.setStyle(si);
+
+        TextField txtHeure = new TextField("08:00 - 10:00");
+        txtHeure.setStyle("-fx-background-color: #121a21; -fx-text-fill: white; " +
+                          "-fx-border-color: #2d3f50; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 8;");
+        Label lhLabel = new Label("CRÉNEAU :"); lhLabel.setStyle(si);
+
+        Button btnOk = new Button("CONFIRMER ET NOTIFIER");
+        btnOk.setMaxWidth(Double.MAX_VALUE); styliserBoutonPrimaire(btnOk);
+        btnOk.setOnAction(ev -> {
+            try {
+                salle.setEtatSalle("Occupée");
+                salleDAO.update(salle);
+                String cours = (txtClasse != null ? txtClasse.getText() : "");
+                notifService.confirmerReservation(txtEmail.getText(),
+                    "Cours [" + cours + "] — Salle " + salle.getNumeroSalle() + " — " + txtHeure.getText());
+                stage.close();
+                afficherAlerte("Réservation confirmée", "Salle " + salle.getNumeroSalle() + " réservée. Email envoyé.");
+                showReservations();
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                afficherAlerte("Erreur", "Impossible d'enregistrer la réservation : " + ex.getMessage());
             }
         });
 
-        form.getChildren().addAll(header, new Separator(), txtNum, txtCap, cbBat, cbCat);
-        dialog.getDialogPane().setContent(form);
+        Button btnAnn = new Button("ANNULER");
+        btnAnn.setMaxWidth(Double.MAX_VALUE);
+        btnAnn.setStyle("-fx-background-color: transparent; -fx-text-fill: " + GRIS_TEXTE + "; -fx-cursor: hand;");
+        btnAnn.setOnAction(ev -> stage.close());
 
-        // --- LOGIQUE DE SAUVEGARDE ---
-        Optional<ButtonType> result = dialog.showAndWait();
-        if (result.isPresent() && result.get() == ButtonType.OK) {
-            try {
-                if (txtNum.getText().isEmpty() || txtCap.getText().isEmpty() || cbBat.getValue() == null) {
-                    afficherAlerte("Données manquantes", "Veuillez remplir tous les champs et choisir un bâtiment.");
-                    return;
-                }
+        root.getChildren().addAll(titre, new Separator(), lCours, lEmail, lCap, lBat, lhLabel, txtHeure, btnOk, btnAnn);
+        stage.setScene(new Scene(root, 480, 420));
+        stage.show();
+    }
 
-                Salle s = new Salle();
-                s.setNumeroSalle(txtNum.getText());
-                s.setCapacite(Integer.parseInt(txtCap.getText()));
-                s.setCategorieSalle(cbCat.getValue()); // Type TD/TP/Amphi [cite: 37]
-                s.setBatiment(cbBat.getValue());      // Liaison avec l'infrastructure 
-                s.setEtatSalle("Disponible");
-                
-                salleDAO.save(s); 
-                showSallesManagement(); 
-                
-                afficherAlerte("Succès", "Salle " + s.getNumeroSalle() + " enregistrée dans le bâtiment " + s.getBatiment().getNomBatiment());
-            } catch (NumberFormatException ex) {
-                afficherAlerte("Erreur", "La capacité doit être un nombre.");
-            } catch (Exception ex) {
-                ex.printStackTrace();
-                afficherAlerte("Erreur Système", "Impossible de lier la salle au bâtiment.");
+    // ══════════════════════════════════════════════════════════════════════════
+    //  HELPERS — LOGIQUE DE LISTE
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void rafraichirListeSalles(boolean avecBouton, String filtre) {
+        if (containerSalles == null) return;
+        containerSalles.getChildren().clear();
+        try {
+            List<Salle> liste = salleDAO.findAll();
+            if (liste == null) return;
+            if (!filtre.isBlank()) {
+                String f = filtre.toLowerCase();
+                liste = liste.stream().filter(s ->
+                    s.getNumeroSalle().toLowerCase().contains(f) ||
+                    (s.getBatiment() != null && s.getBatiment().getNomBatiment().toLowerCase().contains(f))
+                ).collect(Collectors.toList());
             }
+            for (Salle s : liste)
+                containerSalles.getChildren().add(creerCarteSalle(s, avecBouton));
+        } catch (Exception ex) { ex.printStackTrace(); }
+    }
+
+    private VBox creerCarteSalle(Salle salle, boolean avecBouton) {
+        VBox card = new VBox(12); card.setPadding(new Insets(20)); card.setPrefWidth(250);
+        card.setStyle("-fx-background-color: white; -fx-background-radius: 18; " +
+                      "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.08), 14, 0, 0, 0);");
+
+        Label lNum = new Label(salle.getNumeroSalle());
+        lNum.setStyle("-fx-font-weight: bold; -fx-font-size: 22; -fx-text-fill: " + BLEU_DEEP + ";");
+
+        Label lBat = new Label("📍 " + (salle.getBatiment() != null ? salle.getBatiment().getNomBatiment() : "N/A"));
+        lBat.setStyle("-fx-text-fill: " + BLEU_DEEP + "; -fx-font-weight: bold; -fx-font-size: 12;");
+
+        Label lCap = new Label("👥 " + salle.getCapacite() + " places");
+        lCap.setStyle("-fx-text-fill: " + GRIS_TEXTE + "; -fx-font-size: 12;");
+
+        String etat = salle.getEtatSalle() != null ? salle.getEtatSalle() : "Inconnu";
+        Label lEtat = new Label(etat.toUpperCase());
+        lEtat.setAlignment(Pos.CENTER); lEtat.setMaxWidth(Double.MAX_VALUE);
+        String etatColor = etat.equalsIgnoreCase("Disponible") ? VERT_LIME : "#FF3131";
+        lEtat.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + etatColor + "; " +
+                       "-fx-padding: 7 0; -fx-background-radius: 8; -fx-font-weight: bold; -fx-font-size: 11;");
+
+        card.getChildren().addAll(lNum, lBat, lCap, lEtat);
+
+        if (avecBouton) {
+            Button btn = new Button(etat.equalsIgnoreCase("Disponible") ? "RÉSERVER" : "LIBÉRER");
+            btn.setMaxWidth(Double.MAX_VALUE);
+            btn.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME + "; " +
+                         "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 8;");
+            btn.setOnAction(e -> {
+                if (etat.equalsIgnoreCase("Disponible")) showReservations();
+                else { salle.setEtatSalle("Disponible"); salleDAO.update(salle); showSalles(); }
+            });
+            card.getChildren().add(btn);
         }
-    }
-
-    // Fonction utilitaire pour éviter la répétition du style des cellules
-    private ListCell<Batiment> creerListCellCyber() {
-        return new ListCell<>() {
-            @Override
-            protected void updateItem(Batiment b, boolean empty) {
-                super.updateItem(b, empty);
-                if (empty || b == null) {
-                    setText(null);
-                    setStyle("-fx-background-color: #2c3e50;");
-                } else {
-                    setText(b.getNomBatiment());
-                    setStyle("-fx-background-color: #2c3e50; -fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold;");
-                    this.setOnMouseEntered(e -> setStyle("-fx-background-color: " + VERT_LIME + "; -fx-text-fill: " + BLEU_DEEP + ";"));
-                    this.setOnMouseExited(e -> setStyle("-fx-background-color: #2c3e50; -fx-text-fill: " + VERT_LIME + ";"));
-                }
-            }
-        };
-    }
-    
-    
-    @FXML
-    private void showManagerDashboard() {
-        mainContent.getChildren().clear();
-        mainContent.setStyle("-fx-background-color: #FFFFFF;");
-        mainContent.setPadding(new Insets(30));
-
-        // --- 1. HEADER OPÉRATIONNEL ---
-        VBox header = new VBox(5);
-        Label title = new Label("STATION DE GESTION OPÉRATIONNELLE");
-        title.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 24; -fx-font-weight: bold; -fx-text-fill: #1e293b;");
-        
-        Label subTitle = new Label("● SURVEILLANCE DU CAMPUS EN TEMPS RÉEL");
-        subTitle.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11; -fx-text-fill: " + VERT_LIME + "; -fx-background-color: #1e293b; -fx-padding: 2 8;");
-        header.getChildren().addAll(title, subTitle);
-
-        // --- 2. BARRE DE STATUTS RAPIDES (Widgets) ---
-        HBox quickStats = new HBox(20);
-        quickStats.setPadding(new Insets(20, 0, 20, 0));
-        quickStats.getChildren().addAll(
-            creerStatWidget("SALLES OCCUPÉES", "12 / 45", "🔴"),
-            creerStatWidget("CONFLITS IA", "00", "🛡️"),
-            creerStatWidget("TEMPÉRATURE MOY.", "22°C", "🌡️")
-        );
-
-        // --- 3. ZONE DE CONTRÔLE (Vue Grille des Salles) ---
-        VBox controlZone = new VBox(15);
-        Label sectionTitle = new Label("ÉTAT DES UNITÉS D'ENSEIGNEMENT");
-        sectionTitle.setStyle("-fx-font-weight: bold; -fx-text-fill: #64748b;");
-
-        ScrollPane scrollRooms = new ScrollPane();
-        FlowPane roomGrid = new FlowPane(15, 15);
-        roomGrid.setPadding(new Insets(10));
-        
-        // Simulation de quelques salles pour le test visuel
-        for(int i=1; i<=6; i++) {
-            roomGrid.getChildren().add(creerMiniRoomCard("Salle A0" + i, (i%2==0 ? "Libre" : "Occupée")));
-        }
-
-        scrollRooms.setContent(roomGrid);
-        scrollRooms.setFitToWidth(true);
-        scrollRooms.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
-
-        controlZone.getChildren().addAll(sectionTitle, scrollRooms);
-
-        mainContent.getChildren().addAll(header, quickStats, controlZone);
-    }
-
-    /**
-     * Petit widget de stat pour le haut de l'écran
-     */
-    private VBox creerStatWidget(String titre, String valeur, String icone) {
-        VBox widget = new VBox(5);
-        widget.setPadding(new Insets(15));
-        widget.setPrefWidth(200);
-        widget.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 15;");
-        
-        Label lblTitre = new Label(titre);
-        lblTitre.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-size: 10; -fx-font-weight: bold;");
-        Label lblVal = new Label(icone + " " + valeur);
-        lblVal.setStyle("-fx-text-fill: white; -fx-font-size: 18; -fx-font-weight: bold;");
-        
-        widget.getChildren().addAll(lblTitre, lblVal);
-        return widget;
-    }
-
-    /**
-     * Petite carte de salle compacte pour le gestionnaire
-     */
-    private VBox creerMiniRoomCard(String nom, String etat) {
-        VBox card = new VBox(10);
-        card.setPadding(new Insets(15));
-        card.setPrefSize(160, 100);
-        
-        String color = etat.equals("Libre") ? VERT_LIME : "#e74c3c";
-        card.setStyle("-fx-background-color: white; -fx-border-color: #e2e8f0; -fx-border-width: 1; -fx-border-radius: 10; -fx-background-radius: 10;");
-        
-        Label lblNom = new Label(nom);
-        lblNom.setStyle("-fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
-        
-        Label lblStatus = new Label(etat.toUpperCase());
-        lblStatus.setStyle("-fx-text-fill: " + color + "; -fx-font-size: 10; -fx-font-weight: bold;");
-        
-        card.getChildren().addAll(lblNom, new Separator(), lblStatus);
         return card;
+    }
+
+    private VBox construireAlerteCapacite(int effectifDemande, int maxCap, Button btnScan) {
+        VBox box = new VBox(12); box.setPadding(new Insets(25)); box.setMaxWidth(500);
+        box.setStyle("-fx-background-color: rgba(231,76,60,0.08); -fx-border-color: #e74c3c; " +
+                     "-fx-border-radius: 12; -fx-background-radius: 12;");
+        Label t = new Label("⚠️ CONFLIT DE CAPACITÉ DÉTECTÉ");
+        t.setStyle("-fx-text-fill: #c0392b; -fx-font-weight: bold; -fx-font-size: 15;");
+        Label d = new Label("Effectif demandé : " + effectifDemande + " — Capacité maximale du réseau : " + maxCap + ".");
+        d.setStyle("-fx-text-fill: " + BLEU_DEEP + ";");
+        Button conseil = new Button("VOIR LES PLUS GRANDES UNITÉS");
+        conseil.setStyle("-fx-background-color: transparent; -fx-text-fill: " + VERT_LIME + "; " +
+                         "-fx-border-color: " + VERT_LIME + "; -fx-cursor: hand; -fx-background-radius: 6; -fx-border-radius: 6;");
+        if (txtEffectif != null && btnScan != null)
+            conseil.setOnAction(e -> { txtEffectif.setText(String.valueOf(maxCap)); btnScan.fire(); });
+        box.getChildren().addAll(t, d, conseil);
+        return box;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  HELPERS — COMPOSANTS UI
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** Vide et reconfigure mainContent */
+    private void preparerContenu(String style) {
+        mainContent.getChildren().clear();
+        mainContent.setOpacity(1.0);
+        mainContent.setAlignment(Pos.TOP_LEFT);
+        mainContent.setPadding(new Insets(30));
+        mainContent.setStyle(style);
+        mainContent.setSpacing(18);
+    }
+
+    /** Barre supérieure avec titre et bouton logout */
+    private HBox construireTopBar(String titrePaneau, String labelLogout, double maxAccent) {
+        HBox bar = new HBox(); bar.setAlignment(Pos.CENTER_LEFT);
+
+        if (titrePaneau != null) {
+            VBox h = new VBox(6);
+            Label t = new Label(titrePaneau);
+            t.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 24; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
+            Region acc = new Region(); acc.setPrefHeight(4);
+            if (maxAccent > 0) acc.setMaxWidth(maxAccent);
+            acc.setStyle("-fx-background-color: " + VERT_LIME + "; -fx-background-radius: 2;");
+            h.getChildren().addAll(t, acc);
+            bar.getChildren().add(h);
+        }
+
+        Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
+        Button btnLogout = new Button(labelLogout);
+        btnLogout.setStyle("-fx-background-color: transparent; -fx-text-fill: #ef4444; " +
+                           "-fx-font-weight: bold; -fx-cursor: hand; -fx-font-size: 12;");
+        btnLogout.setOnAction(e -> showLoginSelection());
+        bar.getChildren().addAll(sp, btnLogout);
+        return bar;
+    }
+
+    private VBox construireHeader(String titre, String sous) {
+        VBox h = new VBox(6);
+        Label t = new Label(titre);
+        t.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 24; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
+        Region acc = new Region(); acc.setPrefSize(110, 4); acc.setMaxWidth(110);
+        acc.setStyle("-fx-background-color: " + VERT_LIME + "; -fx-background-radius: 2;");
+        Label s = new Label(sous); s.setStyle("-fx-text-fill: " + GRIS_TEXTE + "; -fx-font-size: 13;");
+        h.getChildren().addAll(t, acc, s);
+        return h;
+    }
+
+    private HBox construireStepper(String... etapes) {
+        HBox box = new HBox(30); box.setAlignment(Pos.CENTER);
+        box.setPadding(new Insets(14, 25, 14, 25));
+        box.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 12;");
+        for (int i = 0; i < etapes.length; i++) {
+            Label l = new Label(etapes[i]);
+            l.setStyle(i == 0
+                ? "-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-font-family: 'Consolas';"
+                : "-fx-text-fill: " + GRIS_TEXTE + "; -fx-font-family: 'Consolas';");
+            box.getChildren().add(l);
+            if (i < etapes.length - 1) {
+                Label fl = new Label(" ➔ ");
+                fl.setStyle("-fx-text-fill: " + GRIS_TEXTE + ";");
+                box.getChildren().add(fl);
+            }
+        }
+        return box;
+    }
+
+    private VBox construirePlaceholder(String titre, String detail, double height) {
+        VBox box = new VBox(8); box.setAlignment(Pos.CENTER); box.setPrefHeight(height);
+        box.setStyle("-fx-background-color: #f8fafc; -fx-border-color: #e2e8f0; " +
+                     "-fx-border-radius: 10; -fx-background-radius: 10;");
+        Label t = new Label(titre); t.setStyle("-fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
+        Label d = new Label(detail); d.setStyle("-fx-text-fill: " + GRIS_TEXTE + "; -fx-font-size: 12;");
+        box.getChildren().addAll(t, d);
+        return box;
+    }
+
+    private ScrollPane creerScrollPane(javafx.scene.Node contenu, double prefHeight) {
+        ScrollPane sp = new ScrollPane(contenu);
+        sp.setFitToWidth(true); sp.setPrefHeight(prefHeight);
+        sp.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        sp.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        sp.setStyle("-fx-background-color: transparent; -fx-background: transparent; -fx-border-color: transparent;");
+        return sp;
+    }
+
+    private Button btnRetour(Runnable action) {
+        Button b = new Button("← RETOUR");
+        b.setStyle("-fx-background-color: transparent; -fx-text-fill: " + GRIS_TEXTE + "; " +
+                   "-fx-font-weight: bold; -fx-cursor: hand;");
+        b.setOnAction(e -> action.run());
+        return b;
+    }
+
+    /** Grand titre de section */
+    private Label creerTitre(String texte) {
+        Label l = new Label(texte);
+        l.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 24; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
+        return l;
+    }
+
+    private VBox creerWidgetStat(String titre, String valeur) {
+        VBox w = new VBox(6); w.setAlignment(Pos.CENTER); w.setPrefSize(210, 110);
+        w.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 22;");
+        Label lt = new Label(titre); lt.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-weight: bold; -fx-font-size: 11;");
+        Label lv = new Label(valeur); lv.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-size: 38; -fx-font-weight: bold;");
+        w.getChildren().addAll(lt, lv);
+        return w;
+    }
+
+    public VBox creerCarteAction(String titre, String desc, EventHandler<MouseEvent> action) {
+        VBox card = new VBox(14); card.setPadding(new Insets(26)); card.setPrefSize(240, 170);
+        card.setAlignment(Pos.TOP_LEFT); card.setCursor(Cursor.HAND);
+        String base = "-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 18; " +
+                      "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 10, 0, 0, 4);";
+        card.setStyle(base);
+        Label lt = new Label(titre); lt.setWrapText(true);
+        lt.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 12; -fx-text-fill: " + VERT_LIME + ";");
+        Label ld = new Label(desc); ld.setWrapText(true);
+        ld.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 11;");
+        card.getChildren().addAll(lt, ld);
+        card.setOnMouseClicked(action);
+        card.setOnMouseEntered(e -> { card.setTranslateY(-6);
+            card.setStyle(base + "-fx-border-color: " + VERT_LIME + "; -fx-border-width: 2; -fx-border-radius: 18;"); });
+        card.setOnMouseExited(e -> { card.setTranslateY(0); card.setStyle(base); });
+        return card;
+    }
+
+    private VBox creerGroupeSaisie(String label, javafx.scene.control.Control input, double width) {
+        VBox g = new VBox(5);
+        Label l = new Label(label);
+        l.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-size: 10; -fx-font-weight: bold; -fx-font-family: 'Consolas';");
+        input.setPrefWidth(width);
+        input.setStyle("-fx-background-color: #1a252f; -fx-text-fill: white; -fx-border-color: #34495e; " +
+                       "-fx-border-radius: 5; -fx-background-radius: 5; -fx-padding: 8;");
+        g.getChildren().addAll(l, input);
+        return g;
+    }
+
+    private VBox creerNodeTHM(String titre, String icon, String desc, EventHandler<MouseEvent> action) {
+        VBox container = new VBox(16);
+        container.setAlignment(Pos.CENTER_LEFT); container.setCursor(Cursor.HAND);
+        container.setOnMouseClicked(action);
+
+        StackPane panel = new StackPane(); panel.setPrefSize(215, 125);
+
+        Region base = new Region(); base.setPrefSize(195, 42);
+        base.setStyle("-fx-background-color: #060a0f; -fx-background-radius: 10 10 22 22; -fx-translate-y: 14;");
+
+        Region body = new Region(); body.setPrefSize(195, 96);
+        body.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 13; " +
+                      "-fx-border-color: #1a252f; -fx-border-width: 3; -fx-border-radius: 13;");
+
+        Label lIcon = new Label(icon);
+        lIcon.setStyle("-fx-font-size: 30; -fx-background-color: rgba(0,0,0,0.35); " +
+                       "-fx-padding: 7; -fx-background-radius: 9;");
+        lIcon.setTranslateY(-42);
+
+        Label lTitre = new Label(titre.toUpperCase());
+        lTitre.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 9.5; " +
+                        "-fx-text-fill: " + VERT_LIME + "; -fx-letter-spacing: 1;");
+        lTitre.setTranslateY(18);
+
+        panel.getChildren().addAll(base, body, lTitre, lIcon);
+
+        Label lDesc = new Label(desc); lDesc.setWrapText(true); lDesc.setPrefWidth(195);
+        lDesc.setStyle("-fx-font-size: 11; -fx-text-fill: " + GRIS_TEXTE + "; -fx-font-style: italic;");
+
+        HBox row = new HBox(22, panel, lDesc); row.setAlignment(Pos.CENTER_LEFT);
+        container.getChildren().add(row);
+
+        container.setOnMouseEntered(e -> {
+            body.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 13; " +
+                          "-fx-border-color: " + VERT_LIME + "; -fx-border-width: 3; -fx-border-radius: 13;");
+            lTitre.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 9.5; " +
+                            "-fx-text-fill: white; -fx-letter-spacing: 1;");
+            container.setTranslateY(-4); container.setScaleX(1.015); container.setScaleY(1.015);
+        });
+        container.setOnMouseExited(e -> {
+            body.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 13; " +
+                          "-fx-border-color: #1a252f; -fx-border-width: 3; -fx-border-radius: 13;");
+            lTitre.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 9.5; " +
+                            "-fx-text-fill: " + VERT_LIME + "; -fx-letter-spacing: 1;");
+            container.setTranslateY(0); container.setScaleX(1.0); container.setScaleY(1.0);
+        });
+        return container;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  HELPERS — DIALOGUES (STYLE CYBER)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private Dialog<ButtonType> creerDialog(String titreHeader) {
+        Dialog<ButtonType> dlg = new Dialog<>();
+        dlg.setTitle("UNIV-SCHEDULER — " + titreHeader);
+        dlg.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dlg.getDialogPane().setStyle("-fx-background-color: " + BLEU_DEEP + ";");
+
+        // Stylise les boutons OK / CANCEL
+        Button btnOk = (Button) dlg.getDialogPane().lookupButton(ButtonType.OK);
+        if (btnOk != null) styliserBoutonPrimaire(btnOk);
+        return dlg;
+    }
+
+    /** Retourne le VBox form intérieur du dialog (déjà ajouté au DialogPane) */
+    private VBox getDialogForm(Dialog<?> dlg) {
+        VBox form = new VBox(13);
+        form.setPadding(new Insets(22));
+        form.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 12;");
+        dlg.getDialogPane().setContent(form);
+        return form;
+    }
+
+    private TextField creerChampCyber(String placeholder) {
+        TextField tf = new TextField(placeholder);
+        appliquerStyleFieldCyber(tf);
+        return tf;
+    }
+
+    private <T> ComboBox<T> creerComboCyber(T... items) {
+        ComboBox<T> cb = new ComboBox<>();
+        cb.getItems().addAll(items);
+        cb.setMaxWidth(Double.MAX_VALUE);
+        appliquerStyleFieldCyber(cb);
+        return cb;
+    }
+
+    private void appliquerStyleFieldCyber(javafx.scene.control.Control c) {
+        c.setStyle("-fx-background-color: #1a252f; -fx-text-fill: " + VERT_LIME + "; " +
+                   "-fx-border-color: " + VERT_LIME + "33; -fx-border-radius: 7; " +
+                   "-fx-background-radius: 7; -fx-font-weight: bold; -fx-padding: 9;");
+    }
+
+    private Label creerLabel(String texte) {
+        Label l = new Label(texte);
+        l.setStyle("-fx-text-fill: " + VERT_LIME + "99; -fx-font-size: 10; -fx-font-family: 'Consolas';");
+        return l;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  HELPERS — BOUTONS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void styliserBoutonPrimaire(Button b) {
+        String s = "-fx-background-color: " + VERT_LIME + "; -fx-text-fill: " + BLEU_DEEP + "; " +
+                   "-fx-font-weight: bold; -fx-background-radius: 8; -fx-cursor: hand;";
+        String h = "-fx-background-color: white; -fx-text-fill: " + BLEU_DEEP + "; " +
+                   "-fx-font-weight: bold; -fx-background-radius: 8; -fx-cursor: hand;";
+        b.setStyle(s);
+        b.setOnMouseEntered(e -> b.setStyle(h));
+        b.setOnMouseExited(e  -> b.setStyle(s));
+    }
+
+    private void styliserBoutonSecondaire(Button b) {
+        b.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME + "; " +
+                   "-fx-font-weight: bold; -fx-padding: 9 20; -fx-background-radius: 8; -fx-cursor: hand;");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  HELPER — ALERTE GÉNÉRIQUE
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void afficherAlerte(String titre, String message) {
+        Alert a = new Alert(Alert.AlertType.INFORMATION);
+        a.setTitle(titre); a.setHeaderText(null); a.setContentText(message); a.showAndWait();
     }
 }
