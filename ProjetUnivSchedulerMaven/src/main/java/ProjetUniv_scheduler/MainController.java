@@ -5,8 +5,10 @@ import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.scene.web.WebView;
 import javafx.event.EventHandler;
 import javafx.geometry.Insets;
+import java.time.LocalTime;
 import javafx.geometry.Pos;
 import javafx.stage.Stage;
 import javafx.scene.Cursor;
@@ -20,7 +22,6 @@ import javafx.scene.effect.DropShadow;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
-import javafx.scene.shape.Line;
 import javafx.fxml.FXML;
 import javafx.util.Duration;
 
@@ -29,38 +30,25 @@ import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class MainController {
 
     @FXML private VBox mainContent;
-    
-    @FXML
-    private Button btnLogout;
-    
-    @FXML
-    private Button btnAdministration;
+    @FXML private Button btnLogout;
+    @FXML private Button btnAdministration;
+    @FXML private Button btnPlanification;
+    @FXML private Button btnDashboard;
+    @FXML private Button btnMonEDT;
+    @FXML private Button btnMonProfil;
+    @FXML private Button btnSalles;
+    @FXML private Button btnReservations;
+    @FXML private Button btnMesCreneaux;
+    @FXML private Button btnUtilisateurs;
+    @FXML private Button btnTrouverSalle;
+    @FXML private Button btnNotifications;
+    @FXML private VBox sidebar;
 
-    @FXML
-    private Button btnPlanification;
-    
-    @FXML
-    private Button btnDashboard;
-
-    @FXML
-    private Button btnSalles;
-
-    @FXML
-    private Button btnReservations;
-
-    @FXML
-    private Button btnNotifications;
-    
-    @FXML
-    private VBox sidebar;
-    private Utilisateur utilisateurConnecte = null;
     private GestionnaireModule gestionnaireModule = null;
     private static final String BLEU_DEEP  = "#1E2732";
     private static final String VERT_LIME  = "#A3FF33";
@@ -69,14 +57,16 @@ public class MainController {
     PauseTransition pause = new PauseTransition(Duration.seconds(2));
 
     // ── DAOs ──────────────────────────────────────────────────────────────────
-    private final CreneauDAO     creneauDAO     = new CreneauDAO(HibernateUtil.getSessionFactory());
-    private final ReservationDAO reservationDAO = new ReservationDAO(HibernateUtil.getSessionFactory());
-    private final SalleDAO          salleDAO         = new SalleDAO();
-    private final EquipementDAO     equipementDAO    = new EquipementDAO();
-    private final BatimentDAO       batimentDAO      = new BatimentDAO(HibernateUtil.getSessionFactory());
-    private final UtilisateurDAO    utilisateurDAO   = new UtilisateurDAO();
-    private final NotificationDAO   notificationDAO  = new NotificationDAO(HibernateUtil.getSessionFactory());
-    private final NotificationService notifService   = new NotificationService(notificationDAO);
+    private final CreneauDAO      creneauDAO      = new CreneauDAO(HibernateUtil.getSessionFactory());
+    private final ReservationDAO  reservationDAO  = new ReservationDAO(HibernateUtil.getSessionFactory());
+    private final SalleDAO        salleDAO        = new SalleDAO();
+    private final EquipementDAO   equipementDAO   = new EquipementDAO();
+    private final BatimentDAO     batimentDAO     = new BatimentDAO(HibernateUtil.getSessionFactory());
+    private final UtilisateurDAO  utilisateurDAO  = new UtilisateurDAO();
+    private final NotificationDAO notificationDAO = new NotificationDAO(HibernateUtil.getSessionFactory());
+    private final NotificationService notifService = new NotificationService(notificationDAO);
+    
+    // CORRECTION : Une seule déclaration pour ces variables
     private Utilisateur utilisateurConnecte = null;
     private String      roleConnecte        = null;
 
@@ -90,23 +80,19 @@ public class MainController {
     // ── CALLBACK LOGOUT (branché par LoginController) ─────────────────────────
     private Runnable logoutAction = null;
 
-    /** Appelée par LoginController après connexion réussie. */
     public void setLogoutAction(Runnable action) {
         this.logoutAction = action;
     }
 
     @FXML
     public void initialize() {
-        // 1. Masquer la sidebar par défaut au lancement
         if (sidebar != null) {
             sidebar.setVisible(false);
             sidebar.setManaged(false);
         }
 
-        // 2. Afficher directement l'écran des 4 portails au lieu du message d'attente
         showLoginSelection();
 
-        // 3. Configurer le style du bouton déconnexion (Vert Lime)
         if (btnLogout != null) {
             btnLogout.setStyle("-fx-background-color: transparent; -fx-text-fill: #A3FF33; " +
                                "-fx-border-color: #A3FF33; -fx-border-radius: 5; -fx-font-weight: bold;");
@@ -117,55 +103,67 @@ public class MainController {
     private void handleLogout() {
         System.out.println("LOG : Déconnexion — Retour à l'état initial (Plein écran).");
         
-        // 1. On cache la barre latérale ET on dit au BorderPane de l'ignorer
         if (sidebar != null) {
             sidebar.setVisible(false);
-            sidebar.setManaged(false); // Crucial pour que le centre prenne toute la place
+            sidebar.setManaged(false);
         }
 
-        // 2. On réinitialise le titre de la fenêtre (Optionnel mais plus propre)
         if (mainContent.getScene() != null) {
             ((Stage) mainContent.getScene().getWindow()).setTitle("UNIV-SCHEDULER");
         }
 
-        // 3. On recharge l'écran de sélection des 4 portails
         showLoginSelection(); 
     }
     
     public void filtrerMenuLateral(String role) {
-        // Sécurité : si les boutons FXML ne sont pas injectés, on sort proprement
         if (role == null) return;
-        if (btnDashboard == null) return;   // FXML boutons absents → rien à faire
 
-        // 1. Tout remettre visible par défaut
-        setBtn(btnDashboard,      true);
-        setBtn(btnSalles,         true);
-        setBtn(btnPlanification,  true);
-        setBtn(btnReservations,   true);
+        // 1. On active tous les boutons par défaut 
+        // (la méthode setBtn sécurise l'appel si un bouton est null)
         setBtn(btnAdministration, true);
+        setBtn(btnUtilisateurs,   true);
         setBtn(btnNotifications,  true);
+        setBtn(btnPlanification,  true);
+        setBtn(btnDashboard,      true); // Correspond à Etat des Salles
+        setBtn(btnSalles,         true);
+        setBtn(btnReservations,   true);
+        setBtn(btnMesCreneaux,    true);
+        setBtn(btnMonEDT,         true);
+        setBtn(btnTrouverSalle,   true);
+        setBtn(btnMonProfil,      true);
 
-        // 2. Restrictions par rôle
+        // 2. On désactive ce qui n'est pas nécessaire selon le rôle
         switch (role) {
             case "Administrateur" -> {
-                setBtn(btnPlanification, false);
-                setBtn(btnReservations,  false);
+                // L'administrateur ne voit QUE Administration et Mon Profil
+                setBtn(btnUtilisateurs,   false);
+                setBtn(btnNotifications,  false);
+                setBtn(btnPlanification,  false);
+                setBtn(btnDashboard,      false);
+                setBtn(btnSalles,         false);
+                setBtn(btnReservations,   false);
+                setBtn(btnMesCreneaux,    false);
+                setBtn(btnMonEDT,         false);
+                setBtn(btnTrouverSalle,   false);
             }
-            case "Gestionnaire" -> setBtn(btnAdministration, false);
-            case "Enseignant", "Étudiant" -> {
+            case "Gestionnaire" -> {
+                setBtn(btnAdministration, false);
+                setBtn(btnMesCreneaux,    false);
+                setBtn(btnMonEDT,         false);
+                setBtn(btnTrouverSalle,   false);
+            }
+            case "Enseignant", "Etudiant" -> {
                 setBtn(btnAdministration, false);
                 setBtn(btnPlanification,  false);
+                setBtn(btnUtilisateurs,   false);
             }
         }
     }
-
-    /** Helper interne : set visible+managed en même temps, null-safe */
     private void setBtn(Button b, boolean visible) {
         if (b == null) return;
         b.setVisible(visible);
         b.setManaged(visible);
     }
-    
     
     @FXML
     public void showAdminPanel() {
@@ -176,7 +174,6 @@ public class MainController {
         mainContent.setPadding(new Insets(0));
         mainContent.setSpacing(0);
 
-        // ══ DONNÉES ══════════════════════════════════════════════════════════
         List<Salle>       salles  = salleDAO.findAll();
         List<Utilisateur> users   = utilisateurDAO.findAll();
         List<Equipement>  equips  = equipementDAO.findAll();
@@ -192,7 +189,6 @@ public class MainController {
         long totalBats    = bats    == null ? 0 : bats.size();
         double tauxOcc    = totalSalles > 0 ? (sallesOcc * 100.0 / totalSalles) : 0;
 
-        // ══ BANDEAU SUPÉRIEUR ═════════════════════════════════════════════════
         HBox topBand = new HBox();
         topBand.setAlignment(Pos.CENTER_LEFT);
         topBand.setPadding(new Insets(16, 30, 16, 30));
@@ -200,8 +196,7 @@ public class MainController {
 
         VBox titleBox = new VBox(2);
         Label lTitle = new Label("CONSOLE DE SUPERVISION");
-        lTitle.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 20; " +
-                        "-fx-font-weight: bold; -fx-text-fill: " + VERT_LIME + ";");
+        lTitle.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 20; -fx-font-weight: bold; -fx-text-fill: " + VERT_LIME + ";");
         Label lSub = new Label("Vue d'ensemble — Mise à jour en temps réel");
         lSub.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 11;");
         titleBox.getChildren().addAll(lTitle, lSub);
@@ -213,113 +208,152 @@ public class MainController {
 
         topBand.getChildren().addAll(titleBox, sp, lTime);
 
-        // ══ ZONE SCROLLABLE ════════════════════════════════════════════════════
         VBox scrollContent = new VBox(28);
         scrollContent.setPadding(new Insets(28, 30, 40, 30));
 
-        // ── ROW 1 : KPI CARDS ────────────────────────────────────────────────
         HBox kpiRow = new HBox(16);
         kpiRow.getChildren().addAll(
             creerKpiCard("🏢", "SALLES TOTALES",   String.valueOf(totalSalles), VERT_LIME,   "+" + totalBats + " bâtiments"),
-            creerKpiCard("✅", "DISPONIBLES",       String.valueOf(sallesDispo), "#22c55e",   String.format("%.0f%% du réseau", totalSalles > 0 ? sallesDispo*100.0/totalSalles : 0)),
-            creerKpiCard("🔴", "OCCUPÉES",          String.valueOf(sallesOcc),   "#f97316",   String.format("Taux : %.1f%%", tauxOcc)),
-            creerKpiCard("🔧", "MAINTENANCE",       String.valueOf(sallesMaint), "#facc15",   "Intervention requise"),
-            creerKpiCard("👤", "UTILISATEURS",      String.valueOf(totalUsers),  "#818cf8",   "Actifs dans le système"),
-            creerKpiCard("⚙️", "ÉQUIPEMENTS",       String.valueOf(totalEquips), "#38bdf8",   equipsKO + " en panne")
+            creerKpiCard("✅", "DISPONIBLES",       String.valueOf(sallesDispo), VERT_LIME,   String.format("%.0f%% du réseau", totalSalles > 0 ? sallesDispo*100.0/totalSalles : 0)),
+            creerKpiCard("🔴", "OCCUPEES",          String.valueOf(sallesOcc),   VERT_LIME,   String.format("Taux : %.1f%%", tauxOcc)),
+            creerKpiCard("🔧", "MAINTENANCE",       String.valueOf(sallesMaint), VERT_LIME,   "Intervention requise"),
+            creerKpiCard("👤", "UTILISATEURS",      String.valueOf(totalUsers),  VERT_LIME,   "Actifs dans le système"),
+            creerKpiCard("⚙️", "EQUIPEMENTS",       String.valueOf(totalEquips), VERT_LIME,   equipsKO + " en panne")
         );
 
-        // ── ROW 2 : BAR CHART + PIE CHART ────────────────────────────────────
         HBox chartsRow = new HBox(20);
         chartsRow.setPrefHeight(320);
 
-        // BAR CHART — Vue globale infrastructure
-        CategoryAxis xAxis = new CategoryAxis();
-        NumberAxis   yAxis = new NumberAxis();
-        xAxis.setStyle("-fx-tick-label-fill: #64748b; -fx-font-family: 'Consolas';");
-        yAxis.setStyle("-fx-tick-label-fill: #64748b; -fx-font-family: 'Consolas';");
-        xAxis.setLabel(""); yAxis.setLabel("Quantité");
+        // -------------------------------------------------------------------------
+        // 1. GRAPHIQUE BARRES (INFRASTRUCTURE GLOBALE) avec Chart.js via WebView
+        // -------------------------------------------------------------------------
+        WebView barWebView = new WebView();
+        barWebView.setPrefWidth(520);
+        barWebView.setStyle("-fx-background-color: white; -fx-background-radius: 18; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.05), 10, 0, 0, 4);");
+        
+        String htmlBarTemplate = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+                <style>
+                    body { font-family: 'Consolas', monospace; background-color: white; margin: 0; padding: 15px; overflow: hidden; }
+                    .chart-container { position: relative; height: 280px; width: 100%%; }
+                    h3 { color: %s; text-align: center; margin-top: 0; font-size: 16px; }
+                </style>
+            </head>
+            <body>
+                <h3>INFRASTRUCTURE GLOBALE</h3>
+                <div class="chart-container">
+                    <canvas id="barChart"></canvas>
+                </div>
+                <script>
+                    const ctx = document.getElementById('barChart').getContext('2d');
+                    new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: ['Bâtiments', 'Salles', 'Disponibles', 'Occupées', 'Maintenance', 'Utilisateurs', 'Équipements', 'Équip. KO'],
+                            datasets: [{
+                                data: [%d, %d, %d, %d, %d, %d, %d, %d],
+                                backgroundColor: '%s',
+                                borderRadius: 6,
+                                borderSkipped: false
+                            }]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: { legend: { display: false } },
+                            scales: {
+                                y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { color: '#64748b' } },
+                                x: { grid: { display: false }, ticks: { color: '#64748b', maxRotation: 45, minRotation: 45 } }
+                            }
+                        }
+                    });
+                </script>
+            </body>
+            </html>
+            """;
 
-        javafx.scene.chart.BarChart<String, Number> barChart =
-            new javafx.scene.chart.BarChart<>(xAxis, yAxis);
-        barChart.setTitle("INFRASTRUCTURE GLOBALE");
-        barChart.setLegendVisible(false);
-        barChart.setAnimated(true);
-        barChart.setPrefWidth(520);
-        barChart.setStyle("-fx-background-color: white; -fx-background-radius: 18; " +
-                          "-fx-padding: 14; -fx-plot-background-color: #f8fafc;");
-
-        javafx.scene.chart.XYChart.Series<String, Number> serie = new javafx.scene.chart.XYChart.Series<>();
-        serie.getData().addAll(
-            new javafx.scene.chart.XYChart.Data<>("Bâtiments",    totalBats),
-            new javafx.scene.chart.XYChart.Data<>("Salles",       totalSalles),
-            new javafx.scene.chart.XYChart.Data<>("Disponibles",  sallesDispo),
-            new javafx.scene.chart.XYChart.Data<>("Occupées",     sallesOcc),
-            new javafx.scene.chart.XYChart.Data<>("Maintenance",  sallesMaint),
-            new javafx.scene.chart.XYChart.Data<>("Utilisateurs", totalUsers),
-            new javafx.scene.chart.XYChart.Data<>("Équipements",  totalEquips),
-            new javafx.scene.chart.XYChart.Data<>("Équip. KO",    equipsKO)
+        String htmlBar = String.format(htmlBarTemplate, 
+            BLEU_DEEP, 
+            totalBats, totalSalles, sallesDispo, sallesOcc, sallesMaint, totalUsers, totalEquips, equipsKO,
+            VERT_LIME 
         );
-        barChart.getData().add(serie);
+        barWebView.getEngine().loadContent(htmlBar);
 
-        // Coloriser chaque barre après rendu
-        String[] barColors = {
-            "#818cf8", VERT_LIME, "#22c55e", "#f97316", "#facc15", "#38bdf8", "#a78bfa", "#ef4444"
-        };
-        Platform.runLater(() -> {
-            var dataList = serie.getData();
-            for (int i = 0; i < dataList.size(); i++) {
-                javafx.scene.Node node = dataList.get(i).getNode();
-                if (node != null) {
-                    final String color = barColors[i % barColors.length];
-                    node.setStyle("-fx-bar-fill: " + color + ";");
-                    DropShadow glow = new DropShadow(10, Color.web(color));
-                    node.setEffect(glow);
-                }
-            }
-            // Style titre
-            javafx.scene.Node chartTitle = barChart.lookup(".chart-title");
-            if (chartTitle != null)
-                chartTitle.setStyle("-fx-text-fill: " + BLEU_DEEP + "; -fx-font-family: 'Consolas'; -fx-font-weight: bold;");
-        });
+        // -------------------------------------------------------------------------
+        // 2. GRAPHIQUE CIRCULAIRE (EQUIPEMENTS) avec Chart.js via WebView
+        // -------------------------------------------------------------------------
+        WebView pieWebView = new WebView();
+        pieWebView.setPrefWidth(280);
+        pieWebView.setStyle("-fx-background-color: white; -fx-background-radius: 18; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.05), 10, 0, 0, 4);");
 
-        // PIE CHART — Statut équipements
-        PieChart pie = new PieChart(FXCollections.observableArrayList(
-            new PieChart.Data("Opérationnels",   totalEquips - equipsKO),
-            new PieChart.Data("En panne/maint.", equipsKO)
-        ));
-        pie.setTitle("ÉQUIPEMENTS");
-        pie.setLabelsVisible(true);
-        pie.setAnimated(true);
-        pie.setPrefWidth(280);
-        pie.setStyle("-fx-background-color: white; -fx-background-radius: 18; -fx-padding: 10;");
+        String htmlPieTemplate = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+                <style>
+                    body { font-family: 'Consolas', monospace; background-color: white; margin: 0; padding: 15px; overflow: hidden; }
+                    .chart-container { position: relative; height: 240px; width: 100%%; display: flex; justify-content: center; }
+                    h3 { color: %s; text-align: center; margin-top: 0; margin-bottom: 15px; font-size: 16px; }
+                </style>
+            </head>
+            <body>
+                <h3>EQUIPEMENTS</h3>
+                <div class="chart-container">
+                    <canvas id="pieChart"></canvas>
+                </div>
+                <script>
+                    const ctx = document.getElementById('pieChart').getContext('2d');
+                    new Chart(ctx, {
+                        type: 'pie',
+                        data: {
+                            labels: ['Opérationnels', 'En panne/maint.'],
+                            datasets: [{
+                                data: [%d, %d],
+                                backgroundColor: ['%s', '#ffffff'],
+                                borderColor: ['#ffffff', '%s'],
+                                hoverOffset: 4,
+                                borderWidth: 2
+                            }]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: {
+                                legend: { position: 'bottom', labels: { color: '#64748b', boxWidth: 12 } }
+                            }
+                        }
+                    });
+                </script>
+            </body>
+            </html>
+            """;
 
-        Platform.runLater(() -> {
-            pie.getData().forEach(d -> {
-                String c = d.getName().startsWith("Op") ? "#22c55e" : "#ef4444";
-                if (d.getNode() != null) d.getNode().setStyle("-fx-pie-color: " + c + ";");
-            });
-            javafx.scene.Node pt = pie.lookup(".chart-title");
-            if (pt != null) pt.setStyle("-fx-text-fill: " + BLEU_DEEP + "; -fx-font-family: 'Consolas'; -fx-font-weight: bold;");
-        });
+        long equipsOperationnels = totalEquips - equipsKO;
+        String htmlPie = String.format(htmlPieTemplate, 
+            BLEU_DEEP, 
+            equipsOperationnels, equipsKO, 
+            VERT_LIME, VERT_LIME
+        );
+        pieWebView.getEngine().loadContent(htmlPie);
 
-        chartsRow.getChildren().addAll(barChart, pie);
+        chartsRow.getChildren().addAll(barWebView, pieWebView);
 
-        // ── ROW 3 : NAVIGATION MODULES ───────────────────────────────────────
-        Label lNav = new Label("ACCÈS RAPIDE AUX MODULES");
-        lNav.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 13; " +
-                      "-fx-font-weight: bold; -fx-text-fill: " + GRIS_TEXTE + ";");
+        Label lNav = new Label("ACCES RAPIDE AUX MODULES");
+        lNav.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 13; -fx-font-weight: bold; -fx-text-fill: " + GRIS_TEXTE + ";");
 
         HBox navRow = new HBox(20);
         navRow.getChildren().addAll(
-            creerTuileNav("👤 UTILISATEURS",   "Accès & Privilèges",    "#818cf8", this::showUserManagement),
+            creerTuileNav("👤 UTILISATEURS",   "Accès & Privilèges",    VERT_LIME, this::showUserManagement),
             creerTuileNav("🏢 INFRASTRUCTURE", "Salles & Bâtiments",    VERT_LIME, this::showSallesManagement),
-            creerTuileNav("⚙️ INVENTAIRE",     "Équipements & IoT",     "#38bdf8", this::showInventoryManagement),
-            creerTuileNav("🔔 NOTIFICATIONS",  "Historique des alertes","#facc15", this::showNotifications)
+            creerTuileNav("⚙️ INVENTAIRE",     "Equipements & IoT",      VERT_LIME, this::showInventoryManagement),
+            creerTuileNav("🔔 NOTIFICATIONS",  "Historique des alertes",VERT_LIME, this::showNotifications)
         );
 
-        // ── ROW 4 : BLOC IA ───────────────────────────────────────────────────
+        // RÉINTÉGRATION DU BLOC IA ICI !
         VBox aiBlock = construireBlockIA();
-
+        
         scrollContent.getChildren().addAll(kpiRow, chartsRow, lNav, navRow, aiBlock);
 
         ScrollPane scroll = new ScrollPane(scrollContent);
@@ -332,11 +366,10 @@ public class MainController {
     }
     
     public void setUtilisateurConnecte(Utilisateur u) {
-      this.utilisateurConnecte = u;
-      this.gestionnaireModule  = null; 
-  }
+        this.utilisateurConnecte = u;
+        this.gestionnaireModule  = null; 
+    }
 
-    // ── Carte KPI ─────────────────────────────────────────────────────────────
     private VBox creerKpiCard(String icon, String titre, String valeur, String couleur, String detail) {
         VBox card = new VBox(8);
         card.setPadding(new Insets(20, 22, 20, 22));
@@ -363,7 +396,6 @@ public class MainController {
 
         card.getChildren().addAll(topRow, lVal, lDet);
 
-        // Hover
         card.setOnMouseEntered(e -> card.setStyle("-fx-background-color: " + couleur + "15; -fx-background-radius: 16; " +
             "-fx-effect: dropshadow(three-pass-box, " + couleur + ", 14, 0, 0, 0); " +
             "-fx-border-left-width: 4; -fx-border-color: transparent transparent transparent " + couleur + "; " +
@@ -376,7 +408,6 @@ public class MainController {
         return card;
     }
 
-    // ── Tuile navigation module ────────────────────────────────────────────────
     private VBox creerTuileNav(String titre, String desc, String couleur, Runnable action) {
         VBox tile = new VBox(10);
         tile.setAlignment(Pos.CENTER_LEFT);
@@ -406,68 +437,90 @@ public class MainController {
         return tile;
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  POINT D'ENTRÉE : GESTIONNAIRE
-    // ══════════════════════════════════════════════════════════════════════════
-
     @FXML
     public void showManagerDashboard() {
         if (sidebar != null) { sidebar.setVisible(true); sidebar.setManaged(true); }
         filtrerMenuLateral("Gestionnaire");
 
-        // Nettoyage propre de la zone centrale
-        mainContent.getChildren().clear();
-        mainContent.setStyle("-fx-background-color: #f8fafc;");
-        mainContent.setAlignment(Pos.TOP_LEFT);
-        mainContent.setPadding(new Insets(20));
-        mainContent.setSpacing(18);
+        // Nettoyage et préparation du fond
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
 
-        // ── Délégation complète à GestionnaireModule ──────────────────────
-        GestionnaireModule gm = new GestionnaireModule(mainContent, utilisateurConnecte);
-        gm.showDashboard();
+        // Barre supérieure avec bouton de déconnexion
+        HBox topBar = construireTopBar(null, "⏻ DECONNEXION", 0);
+
+        // En-tête personnalisé avec le nom de l'utilisateur
+        String nom = utilisateurConnecte != null && utilisateurConnecte.getNom() != null 
+                     ? utilisateurConnecte.getNom().toUpperCase() : "GESTIONNAIRE";
+                     
+        VBox header = construireHeader(
+            "PORTAIL GESTIONNAIRE",
+            "PLANIFICATION ET EMPLOIS DU TEMPS · Bienvenue, " + nom
+        );
+
+        // Ligne 1 des modules
+        HBox row1 = new HBox(25);
+        row1.setPadding(new Insets(35, 0, 0, 0));
+        row1.getChildren().addAll(
+            creerCarteAction("📅 GESTION DES COURS", 
+                "Création, modification et suppression des unités d'enseignement.", 
+                e -> moduleGestionCours()),
+                
+            creerCarteAction("🔑 ASSIGNATION SALLES", 
+                "Lier les cours aux infrastructures physiques disponibles.", 
+                e -> moduleAssignationSalles()),
+                
+            creerCarteAction("⚠️ RESOUDRE CONFLITS", 
+                "Détection et correction IA des chevauchements d'horaires.", 
+                e -> moduleResolutionConflits())
+        );
+
+        // Ligne 2 des modules (Sans les réservations)
+        HBox row2 = new HBox(25);
+        row2.setPadding(new Insets(15, 0, 0, 0));
+        row2.getChildren().addAll(
+            creerCarteAction("📄 GENERER PLANNING", 
+                "Compilation finale et export des données (PDF, Excel).", 
+                e -> moduleGenerationPlanning()),
+                
+            creerCarteAction("🏢 ETAT DES SALLES", 
+                "Surveillance du réseau de salles en temps réel.", 
+                e -> showDashboard())
+        );
+
+        mainContent.getChildren().addAll(topBar, header, row1, row2);
     }
-
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  POINT D'ENTRÉE : ENSEIGNANT
-    // ══════════════════════════════════════════════════════════════════════════
-
     @FXML
     public void showTeacherView(Utilisateur enseignant) {
         if (sidebar != null) { sidebar.setVisible(true); sidebar.setManaged(true); }
         filtrerMenuLateral("Enseignant");
 
-        // Stocker le contexte enseignant pour les sous-modules
         utilisateurConnecte = enseignant;
         roleConnecte        = "Enseignant";
 
         preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
 
-        // ── Barre top avec logout ──────────────────────────────────────────
         HBox topBar = construireTopBar(null, "⏻ LOGOUT", 0);
 
-        // ── En-tête ────────────────────────────────────────────────────────
         VBox header = construireHeader(
             "PORTAIL ENSEIGNANT",
-            "ACCÈS PÉDAGOGIQUE · Bienvenue, "
+            "ACCES PEDAGOGIQUE · Bienvenue, "
                 + (enseignant != null ? enseignant.getNom().toUpperCase() : "ENSEIGNANT")
         );
 
-        // ── Cartes modules ─────────────────────────────────────────────────
         HBox modules = new HBox(30);
         modules.setPadding(new Insets(35, 0, 0, 0));
         modules.setAlignment(Pos.TOP_LEFT);
 
         modules.getChildren().addAll(
-            creerCarteAction("📅 RÉSERVER UNE SALLE",
+            creerCarteAction("📅 RESERVER UNE SALLE",
                 "Localiser une unité libre et planifier une session.",
-                e -> showReservationsEnseignant(enseignant)),    // ← méthode contextualisée
+                e -> showReservationsEnseignant(enseignant)),
 
-            creerCarteAction("🏢 ÉTAT DES UNITÉS",
+            creerCarteAction("🏢 ETAT DES UNITES",
                 "Consulter l'occupation du réseau en temps réel.",
-                e -> showSallesEnseignant(enseignant)),           // ← méthode contextualisée
+                e -> showSallesEnseignant(enseignant)),
 
-            creerCarteAction("📋 MES CRÉNEAUX",
+            creerCarteAction("📋 MES CRENEAUX",
                 "Voir les réservations validées sur votre nom.",
                 e -> showCreneauxEnseignant(enseignant)),
 
@@ -481,19 +534,14 @@ public class MainController {
 
     private void showSallesEnseignant(Utilisateur enseignant) {
         preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
-
-        // ← CORRECTIF : bouton retour vers le portail enseignant
         Button retour = btnRetour(() -> showTeacherView(enseignant));
-
-        Label titre = creerTitre("RÉSEAU DES LOCAUX — ÉTAT EN TEMPS RÉEL");
+        Label titre = creerTitre("RESEAU DES LOCAUX — ETAT EN TEMPS REEL");
 
         TextField search = new TextField();
         search.setPromptText("🔍 Rechercher une salle ou un bâtiment...");
         search.setPrefWidth(480);
-        search.setStyle("-fx-padding: 10; -fx-background-radius: 20; " +
-            "-fx-border-color: " + BLEU_DEEP + "; -fx-border-radius: 20;");
+        search.setStyle("-fx-padding: 10; -fx-background-radius: 20; -fx-border-color: " + BLEU_DEEP + "; -fx-border-radius: 20;");
 
-        if (containerSalles == null) containerSalles = new FlowPane(20, 20);
         containerSalles = new FlowPane(20, 20);
         containerSalles.setPadding(new Insets(15, 0, 0, 0));
         rafraichirListeSalles(true, "");
@@ -503,29 +551,18 @@ public class MainController {
         mainContent.getChildren().addAll(retour, titre, search, scroll);
     }
 
-    /** Réservations vues depuis le portail enseignant — avec bouton retour */
     private void showReservationsEnseignant(Utilisateur enseignant) {
-        // Appel normal de showReservations puis injection du bouton retour
         showReservations();
-        // Insérer le bouton retour en position 0
         mainContent.getChildren().add(0, btnRetour(() -> showTeacherView(enseignant)));
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  POINT D'ENTRÉE : ÉTUDIANT
-    // ══════════════════════════════════════════════════════════════════════════
-
-
     @FXML
     public void showMonPlanning(Utilisateur etudiant) {
-        // 1. Nettoyage et préparation du fond
         preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
         
-        // 2. Barre de titre avec le nom de l'étudiant
         String nom = (etudiant != null) ? etudiant.getNom().toUpperCase() : "MON";
         HBox topBar = construireTopBar("EMPLOI DU TEMPS | " + nom, null, 0);
 
-        // 3. Zone de contenu (Placeholder en attendant ton calendrier)
         VBox planningBox = new VBox(20);
         planningBox.setAlignment(Pos.CENTER);
         planningBox.setPadding(new Insets(50));
@@ -534,50 +571,42 @@ public class MainController {
         info.setStyle("-fx-font-size: 18; -fx-text-fill: " + BLEU_DEEP + ";");
         
         planningBox.getChildren().add(info);
-
-        // 4. Assemblage
         mainContent.getChildren().addAll(topBar, planningBox);
-        
-        System.out.println("LOG : Affichage du planning pour " + nom);
     }
-    
     
     @FXML
     public void showStudentView(Utilisateur etudiant) {
         if (sidebar != null) { sidebar.setVisible(true); sidebar.setManaged(true); }
-        filtrerMenuLateral("Étudiant");
+        filtrerMenuLateral("Etudiant");
         preparerContenu("-fx-background-color: #f0f4f8;");
         mainContent.setPadding(new Insets(0));
         mainContent.setSpacing(0);
 
-        // ── Bandeau supérieur ──────────────────────────────────────────────
         HBox topBand = new HBox();
         topBand.setAlignment(Pos.CENTER_LEFT);
         topBand.setPadding(new Insets(14, 28, 14, 28));
         topBand.setStyle("-fx-background-color: " + BLEU_DEEP + ";");
 
         VBox titreBox = new VBox(2);
-        Label lNom = new Label("PORTAIL ÉTUDIANT");
+        Label lNom = new Label("PORTAIL ETUDIANT");
         lNom.setStyle("-fx-font-family:'Consolas'; -fx-font-size:20; -fx-font-weight:bold; -fx-text-fill:" + VERT_LIME + ";");
         String nomAffiche = etudiant != null
             ? etudiant.getNom().toUpperCase() + (etudiant.getPrenom() != null ? " " + etudiant.getPrenom() : "")
-            : "ÉTUDIANT";
+            : "ETUDIANT";
         Label lSub = new Label("Bienvenue, " + nomAffiche + "  ·  " +
-                java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE dd MMMM yyyy", java.util.Locale.FRENCH)));
+            java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE dd MMMM yyyy", java.util.Locale.FRENCH)));
         lSub.setStyle("-fx-text-fill:#94a3b8; -fx-font-size:11;");
         titreBox.getChildren().addAll(lNom, lSub);
 
         Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
-        Button btnLogout = new Button("⏻ DÉCONNEXION");
-        btnLogout.setStyle("-fx-background-color:transparent; -fx-text-fill:#ef4444; -fx-font-weight:bold; -fx-cursor:hand;");
-        btnLogout.setOnAction(e -> showLoginSelection());
-        topBand.getChildren().addAll(titreBox, sp, btnLogout);
+        Button btnLogoutBand = new Button("⏻ DECONNEXION");
+        btnLogoutBand.setStyle("-fx-background-color:transparent; -fx-text-fill:#ef4444; -fx-font-weight:bold; -fx-cursor:hand;");
+        btnLogoutBand.setOnAction(e -> showLoginSelection());
+        topBand.getChildren().addAll(titreBox, sp, btnLogoutBand);
 
-        // ── Zone scrollable ────────────────────────────────────────────────
         VBox scrollContent = new VBox(26);
         scrollContent.setPadding(new Insets(26, 28, 40, 28));
 
-        // ── Row 1 : KPIs rapides ───────────────────────────────────────────
         List<Salle> toutesSalles = salleDAO.findAll();
         long sallesLibres = toutesSalles == null ? 0 :
             toutesSalles.stream().filter(s -> "Disponible".equalsIgnoreCase(s.getEtatSalle())).count();
@@ -591,17 +620,14 @@ public class MainController {
             creerKpiEtudiant("🏢", "SALLES LIBRES",    String.valueOf(sallesLibres), VERT_LIME,   "sur " + sallesTotal + " au total"),
             creerKpiEtudiant("📅", "COURS AUJOURD'HUI","0",                          "#818cf8",   "Données EDT à connecter"),
             creerKpiEtudiant("🔔", "NOTIFICATIONS",     String.valueOf(notifNonLues), "#facc15",   "non lues"),
-            creerKpiEtudiant("📋", "MES RÉSERVATIONS", "0",                          "#38bdf8",   "salles d'étude")
+            creerKpiEtudiant("📋", "MES RESERVATIONS", "0",                          "#38bdf8",   "salles d'étude")
         );
 
-        // ── Row 2 : Planning de la semaine (aperçu) ────────────────────────
         VBox planningBlock = construireApercuPlanningEtudiant(etudiant);
 
-        // ── Row 3 : Navigation modules ─────────────────────────────────────
-        Label lNav = new Label("MES ACCÈS RAPIDES");
+        Label lNav = new Label("MES ACCES RAPIDES");
         lNav.setStyle("-fx-font-family:'Consolas'; -fx-font-size:13; -fx-font-weight:bold; -fx-text-fill:" + GRIS_TEXTE + ";");
 
-        // Grille 2×3 de tuiles
         GridPane modulesGrid = new GridPane();
         modulesGrid.setHgap(16); modulesGrid.setVgap(16);
 
@@ -613,7 +639,7 @@ public class MainController {
             "Moteur de recherche smart","#22c55e",
             () -> showRechercheEtudiant(etudiant)), 1, 0);
 
-        modulesGrid.add(creerTuileEtudiant("📚 MES RÉSERVATIONS",
+        modulesGrid.add(creerTuileEtudiant("📚 MES RESERVATIONS",
             "Mes salles d'étude",       "#38bdf8",
             () -> showMesReservationsEtudiant(etudiant)), 2, 0);
 
@@ -625,11 +651,11 @@ public class MainController {
             "Groupe, promo, infos",     "#f97316",
             () -> showMonProfilEtudiant(etudiant)), 1, 1);
 
-        modulesGrid.add(creerTuileEtudiant("🏢 ÉTAT DU CAMPUS",
+        // CORRECTION: Remplacement de showSallesEtudiant par showSalles
+        modulesGrid.add(creerTuileEtudiant("🏢 ETAT DU CAMPUS",
             "Salles & bâtiments",       "#c084fc",
-            () -> showSallesEtudiant(etudiant)), 2, 1);
+            () -> showSalles()), 2, 1);
 
-        // ── Row 4 : Notifications récentes (aperçu) ────────────────────────
         VBox notifBlock = construireApercuNotificationsEtudiant(mesNotifs, etudiant);
 
         scrollContent.getChildren().addAll(kpiRow, planningBlock, lNav, modulesGrid, notifBlock);
@@ -640,19 +666,14 @@ public class MainController {
         mainContent.getChildren().addAll(topBand, scroll);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    //  2. EMPLOI DU TEMPS ÉTUDIANT — Vue hebdomadaire interactive
-    // ──────────────────────────────────────────────────────────────────────────
     private void showEdtEtudiant(Utilisateur etudiant) {
         preparerContenu("-fx-background-color: #f8fafc;");
         mainContent.setPadding(new Insets(22, 32, 40, 32));
-
         mainContent.getChildren().add(btnRetour(() -> showStudentView(etudiant)));
 
         VBox header = construireHeader("📅 MON EMPLOI DU TEMPS",
             "Semaine du " + lundiDeLaSemaine() + " — Vue par défaut : semaine courante");
 
-        // ── Sélecteur de semaine ───────────────────────────────────────────
         HBox semRow = new HBox(12);
         semRow.setAlignment(Pos.CENTER_LEFT);
         semRow.setPadding(new Insets(12, 0, 16, 0));
@@ -666,7 +687,6 @@ public class MainController {
 
         Region sepSem = new Region(); HBox.setHgrow(sepSem, Priority.ALWAYS);
 
-        // Filtre par type
         ToggleButton tAll = new ToggleButton("Tous"); tAll.setSelected(true);
         ToggleButton tCM  = new ToggleButton("CM");
         ToggleButton tTD  = new ToggleButton("TD");
@@ -684,7 +704,6 @@ public class MainController {
 
         semRow.getChildren().addAll(btnPrev, lSem, btnNext, sepSem, toggleRow);
 
-        // ── Grille EDT ─────────────────────────────────────────────────────
         ScrollPane edtScroll = new ScrollPane(construireGrilleEDT(etudiant));
         edtScroll.setFitToWidth(true);
         edtScroll.setPrefHeight(480);
@@ -692,7 +711,6 @@ public class MainController {
         edtScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
         edtScroll.setStyle("-fx-background-color:transparent; -fx-background:#f8fafc; -fx-border-color:transparent;");
 
-        // ── Légende ────────────────────────────────────────────────────────
         HBox legendeRow = new HBox(20);
         legendeRow.setPadding(new Insets(14, 0, 0, 0));
         legendeRow.setAlignment(Pos.CENTER_LEFT);
@@ -704,7 +722,6 @@ public class MainController {
             creerLegendeBullet("#e2e8f0", "Libre")
         );
 
-        // ── Info message ───────────────────────────────────────────────────
         HBox infoBox = new HBox(10);
         infoBox.setPadding(new Insets(14, 18, 14, 18));
         infoBox.setStyle("-fx-background-color:#eff6ff; -fx-border-color:#bfdbfe; -fx-border-radius:10; -fx-background-radius:10;");
@@ -719,24 +736,18 @@ public class MainController {
         mainContent.getChildren().addAll(header, semRow, edtScroll, legendeRow, infoBox);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    //  3. RECHERCHE DE SALLE — Moteur intelligent
-    // ──────────────────────────────────────────────────────────────────────────
     private void showRechercheEtudiant(Utilisateur etudiant) {
         preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
         mainContent.setPadding(new Insets(22, 32, 40, 32));
-
         mainContent.getChildren().add(btnRetour(() -> showStudentView(etudiant)));
 
         VBox header = construireHeader("🔍 TROUVER UNE SALLE LIBRE",
             "Recherche intelligente en temps réel — Filtres avancés");
 
-        // ── Panneau de filtres ─────────────────────────────────────────────
         VBox filtersPane = new VBox(16);
         filtersPane.setPadding(new Insets(22, 24, 22, 24));
         filtersPane.setStyle("-fx-background-color:" + BLEU_DEEP + "; -fx-background-radius:18;");
 
-        // Ligne 1 : Texte + capacité + type
         HBox fl1 = new HBox(20); fl1.setAlignment(Pos.BOTTOM_LEFT);
 
         TextField fRecherche = new TextField();
@@ -757,11 +768,10 @@ public class MainController {
 
         fl1.getChildren().addAll(
             creerGroupeSaisie("🔤 RECHERCHE",    fRecherche, 260),
-            creerGroupeSaisie("👥 CAPACITÉ MIN.", fCapacite,  130),
+            creerGroupeSaisie("👥 CAPACITE MIN.", fCapacite,  130),
             creerGroupeSaisie("🏷️ TYPE DE SALLE",  cbType,   160)
         );
 
-        // Ligne 2 : Bâtiment + équipements
         HBox fl2 = new HBox(20); fl2.setAlignment(Pos.BOTTOM_LEFT);
 
         ComboBox<String> cbBatiment = new ComboBox<>();
@@ -782,8 +792,8 @@ public class MainController {
         equipBox.setPadding(new Insets(8, 0, 0, 0));
 
         fl2.getChildren().addAll(
-            creerGroupeSaisie("🏢 BÂTIMENT", cbBatiment, 220),
-            new VBox(5, new Label("🔌 ÉQUIPEMENTS"){{setStyle("-fx-text-fill:" + VERT_LIME + "; -fx-font-size:10; -fx-font-weight:bold; -fx-font-family:'Consolas';");}}, equipBox)
+            creerGroupeSaisie("🏢 BATIMENT", cbBatiment, 220),
+            new VBox(5, new Label("🔌 EQUIPEMENTS"){{setStyle("-fx-text-fill:" + VERT_LIME + "; -fx-font-size:10; -fx-font-weight:bold; -fx-font-family:'Consolas';");}}, equipBox)
         );
 
         Button btnRechercher = new Button("⚡ RECHERCHER");
@@ -792,15 +802,13 @@ public class MainController {
 
         filtersPane.getChildren().addAll(fl1, new Separator(), fl2, btnRechercher);
 
-        // ── Zone résultats ─────────────────────────────────────────────────
-        Label lResultats = new Label("RÉSULTATS");
+        Label lResultats = new Label("RESULTATS");
         lResultats.setStyle("-fx-font-family:'Consolas'; -fx-font-size:12; -fx-font-weight:bold; -fx-text-fill:" + GRIS_TEXTE + ";");
         lResultats.setPadding(new Insets(10, 0, 4, 0));
 
         FlowPane resultPane = new FlowPane(18, 18);
         resultPane.setPadding(new Insets(6, 0, 10, 0));
 
-        // Affichage initial : toutes les salles disponibles
         Runnable doSearch = () -> {
             resultPane.getChildren().clear();
             String txt = fRecherche.getText().toLowerCase();
@@ -857,25 +865,19 @@ public class MainController {
         mainContent.getChildren().addAll(header, filtersPane, lResultats, scroll);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    //  4. MES RÉSERVATIONS DE SALLES D'ÉTUDE
-    // ──────────────────────────────────────────────────────────────────────────
     private void showMesReservationsEtudiant(Utilisateur etudiant) {
         preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
         mainContent.setPadding(new Insets(22, 32, 40, 32));
-
         mainContent.getChildren().add(btnRetour(() -> showStudentView(etudiant)));
 
-        VBox header = construireHeader("📚 MES RÉSERVATIONS DE SALLES D'ÉTUDE",
+        VBox header = construireHeader("📚 MES RESERVATIONS DE SALLES D'ETUDE",
             "Gérez vos sessions de travail en groupe ou individuelle");
 
-        // ── Barre d'actions ────────────────────────────────────────────────
-        Button btnNouvelle = new Button("+ RÉSERVER UNE SALLE");
+        Button btnNouvelle = new Button("+ RESERVER UNE SALLE");
         styliserBoutonPrimaire(btnNouvelle);
         btnNouvelle.setPrefHeight(40);
         btnNouvelle.setOnAction(e -> dialogReserverSalleEtude(etudiant));
 
-        // Filtre statut
         ComboBox<String> cbStatut = new ComboBox<>();
         cbStatut.getItems().addAll("Toutes", "En attente", "Validée", "Annulée");
         cbStatut.setValue("Toutes");
@@ -886,18 +888,17 @@ public class MainController {
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.setPadding(new Insets(10, 0, 14, 0));
 
-        // ── Tableau des réservations ───────────────────────────────────────
         TableView<Reservation> table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         table.setPrefHeight(380);
-        table.setPlaceholder(new Label("Aucune réservation. Cliquez sur '+ RÉSERVER UNE SALLE'."));
+        table.setPlaceholder(new Label("Aucune réservation. Cliquez sur '+ RESERVER UNE SALLE'."));
         table.setStyle("-fx-background-radius:14; -fx-border-radius:14; -fx-border-color:#f1f5f9;");
 
         TableColumn<Reservation, Integer> colNum = new TableColumn<>("#");
         colNum.setCellValueFactory(new PropertyValueFactory<>("numReservation"));
         colNum.setPrefWidth(60);
 
-        TableColumn<Reservation, LocalDateTime> colDate = new TableColumn<>("DATE RÉSERVATION");
+        TableColumn<Reservation, LocalDateTime> colDate = new TableColumn<>("DATE RESERVATION");
         colDate.setCellValueFactory(new PropertyValueFactory<>("dateHeureReservation"));
         colDate.setCellFactory(col -> new TableCell<>() {
             @Override protected void updateItem(LocalDateTime v, boolean empty) {
@@ -919,7 +920,7 @@ public class MainController {
         colNature.setCellValueFactory(new PropertyValueFactory<>("natureSession"));
         colNature.setPrefWidth(120);
 
-        TableColumn<Reservation, String> colEtat = new TableColumn<>("ÉTAT");
+        TableColumn<Reservation, String> colEtat = new TableColumn<>("ETAT");
         colEtat.setCellValueFactory(new PropertyValueFactory<>("etatReservation"));
         colEtat.setPrefWidth(110);
         colEtat.setCellFactory(col -> new TableCell<>() {
@@ -954,7 +955,6 @@ public class MainController {
 
         table.getColumns().addAll(colNum, colDate, colSalle, colNature, colEtat, colActions);
 
-        // Charger les réservations (toutes pour l'instant, filtrer par étudiant si FK dispo)
         List<Reservation> toutes = null;
         try {
             ReservationDAO reservDAO = new ReservationDAO(HibernateUtil.getSessionFactory());
@@ -972,7 +972,6 @@ public class MainController {
             });
         }
 
-        // ── Résumé statistiques ────────────────────────────────────────────
         long total    = toutes == null ? 0 : toutes.size();
         long valides  = toutes == null ? 0 : toutes.stream().filter(r -> "Validée".equalsIgnoreCase(r.getEtatReservation())).count();
         long attente  = toutes == null ? 0 : toutes.stream().filter(r -> "En attente".equalsIgnoreCase(r.getEtatReservation())).count();
@@ -988,19 +987,14 @@ public class MainController {
         mainContent.getChildren().addAll(header, toolbar, statsRow, table);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    //  5. NOTIFICATIONS PERSONNELLES ÉTUDIANT
-    // ──────────────────────────────────────────────────────────────────────────
     private void showNotificationsEtudiant(Utilisateur etudiant) {
         preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
         mainContent.setPadding(new Insets(22, 32, 40, 32));
-
         mainContent.getChildren().add(btnRetour(() -> showStudentView(etudiant)));
 
         VBox header = construireHeader("🔔 CENTRE DE NOTIFICATIONS",
             "Alertes, confirmations et annonces de l'administration");
 
-        // ── Barre d'actions ────────────────────────────────────────────────
         Button btnToutLire = new Button("✓ Tout marquer comme lu");
         btnToutLire.setStyle("-fx-background-color:transparent; -fx-text-fill:" + VERT_LIME + "; -fx-border-color:" + VERT_LIME + "; -fx-border-radius:8; -fx-background-radius:8; -fx-cursor:hand; -fx-font-weight:bold; -fx-padding:8 18;");
 
@@ -1015,7 +1009,6 @@ public class MainController {
         tbNotif.setAlignment(Pos.CENTER_LEFT);
         tbNotif.setPadding(new Insets(8, 0, 14, 0));
 
-        // ── Liste des notifications (cards scrollables) ────────────────────
         VBox notifList = new VBox(10);
         notifList.setPadding(new Insets(4, 0, 10, 0));
 
@@ -1051,22 +1044,16 @@ public class MainController {
         mainContent.getChildren().addAll(header, tbNotif, scroll);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    //  6. MON PROFIL ÉTUDIANT
-    // ──────────────────────────────────────────────────────────────────────────
     private void showMonProfilEtudiant(Utilisateur etudiant) {
         preparerContenu("-fx-background-color: #f0f4f8;");
         mainContent.setPadding(new Insets(22, 32, 40, 32));
-
         mainContent.getChildren().add(btnRetour(() -> showStudentView(etudiant)));
 
-        // ── Carte profil principale ────────────────────────────────────────
         HBox profilCard = new HBox(30);
         profilCard.setPadding(new Insets(30, 32, 30, 32));
         profilCard.setStyle("-fx-background-color:" + BLEU_DEEP + "; -fx-background-radius:22;");
         profilCard.setAlignment(Pos.CENTER_LEFT);
 
-        // Avatar
         StackPane avatar = new StackPane();
         Region avBg = new Region(); avBg.setPrefSize(80, 80); avBg.setMaxSize(80, 80);
         avBg.setStyle("-fx-background-color:" + VERT_LIME + "; -fx-background-radius:40;");
@@ -1079,7 +1066,7 @@ public class MainController {
         String nomComplet = etudiant != null
             ? (etudiant.getNom() != null ? etudiant.getNom() : "") +
               (etudiant.getPrenom() != null ? " " + etudiant.getPrenom() : "")
-            : "Étudiant";
+            : "Etudiant";
         Label lNomComplet = new Label(nomComplet.trim().toUpperCase());
         lNomComplet.setStyle("-fx-font-family:'Consolas'; -fx-font-size:22; -fx-font-weight:bold; -fx-text-fill:white;");
 
@@ -1087,10 +1074,9 @@ public class MainController {
         Label lEmail = new Label("✉  " + emailAff);
         lEmail.setStyle("-fx-text-fill:#94a3b8; -fx-font-size:13;");
 
-        Label lRole = new Label("🎓  Étudiant");
+        Label lRole = new Label("🎓  Etudiant");
         lRole.setStyle("-fx-text-fill:" + VERT_LIME + "; -fx-font-weight:bold; -fx-font-size:13;");
 
-        // Matricule
         String matricule = etudiant != null ? etudiant.getIdentifiantConnexion() : "—";
         Label lMatricule = new Label("🪪  Matricule : " + matricule);
         lMatricule.setStyle("-fx-text-fill:#94a3b8; -fx-font-size:12;");
@@ -1098,8 +1084,6 @@ public class MainController {
         profilInfo.getChildren().addAll(lNomComplet, lEmail, lRole, lMatricule);
         profilCard.getChildren().addAll(avatar, profilInfo);
 
-        // ── Section groupe & promo ─────────────────────────────────────────
-        // Tenter de récupérer l'entité Etudiant pour le groupe
         Etudiant etudiantComplet = null;
         if (etudiant != null) {
             try {
@@ -1128,12 +1112,11 @@ public class MainController {
                 "0 incidents signalés")
         );
 
-        // ── Section modifier mot de passe ──────────────────────────────────
         VBox securityCard = new VBox(14);
         securityCard.setPadding(new Insets(22, 24, 22, 24));
         securityCard.setStyle("-fx-background-color:white; -fx-background-radius:16; -fx-effect:dropshadow(three-pass-box,rgba(0,0,0,0.06),10,0,0,3);");
 
-        Label lSec = new Label("🔒 SÉCURITÉ DU COMPTE");
+        Label lSec = new Label("🔒 SECURITE DU COMPTE");
         lSec.setStyle("-fx-font-family:'Consolas'; -fx-font-size:15; -fx-font-weight:bold; -fx-text-fill:" + BLEU_DEEP + ";");
 
         PasswordField fAncien  = new PasswordField(); fAncien.setPromptText("Ancien mot de passe");
@@ -1178,27 +1161,22 @@ public class MainController {
         mainContent.getChildren().addAll(profilCard, infoCardsRow, securityCard);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    //  7. ÉTAT DU CAMPUS (vue salles pour étudiant)
-    // ──────────────────────────────────────────────────────────────────────────
     @FXML
     private void showSalles() {
         preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
 
-        // ← CORRECTIF : bouton retour selon le rôle connecté
         if ("Enseignant".equalsIgnoreCase(roleConnecte) && utilisateurConnecte != null) {
             mainContent.getChildren().add(btnRetour(() -> showTeacherView(utilisateurConnecte)));
-        } else if ("Étudiant".equalsIgnoreCase(roleConnecte) && utilisateurConnecte != null) {
+        } else if ("Etudiant".equalsIgnoreCase(roleConnecte) && utilisateurConnecte != null) {
             mainContent.getChildren().add(btnRetour(() -> showStudentView(utilisateurConnecte)));
         }
 
-        Label titre = creerTitre("RÉSEAU DES LOCAUX — ÉTAT EN TEMPS RÉEL");
+        Label titre = creerTitre("RESEAU DES LOCAUX — ETAT EN TEMPS REEL");
 
         TextField search = new TextField();
         search.setPromptText("🔍 Rechercher une salle ou un bâtiment...");
         search.setPrefWidth(480);
-        search.setStyle("-fx-padding: 10; -fx-background-radius: 20; " +
-            "-fx-border-color: " + BLEU_DEEP + "; -fx-border-radius: 20;");
+        search.setStyle("-fx-padding: 10; -fx-background-radius: 20; -fx-border-color: " + BLEU_DEEP + "; -fx-border-radius: 20;");
         search.textProperty().addListener((obs, o, n) -> rafraichirListeSalles(true, n));
 
         containerSalles = new FlowPane(20, 20);
@@ -1209,9 +1187,6 @@ public class MainController {
         mainContent.getChildren().addAll(titre, search, scroll);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    //  8. DIALOGUE — RÉSERVER UNE SALLE D'ÉTUDE
-    // ──────────────────────────────────────────────────────────────────────────
     private void dialogReserverSalleEtude(Utilisateur etudiant) {
         javafx.stage.Stage stage = new javafx.stage.Stage();
         stage.initModality(javafx.stage.Modality.APPLICATION_MODAL);
@@ -1223,14 +1198,13 @@ public class MainController {
         root.setStyle("-fx-background-color:" + BLEU_DEEP + "; -fx-border-color:" + VERT_LIME +
             "; -fx-border-width:2; -fx-background-radius:14; -fx-border-radius:14;");
 
-        Label titre = new Label("📚 RÉSERVER UNE SALLE D'ÉTUDE");
+        Label titre = new Label("📚 RESERVER UNE SALLE D'ETUDE");
         titre.setStyle("-fx-text-fill:" + VERT_LIME + "; -fx-font-family:'Consolas'; -fx-font-size:17; -fx-font-weight:bold;");
 
         String fStyle = "-fx-background-color:#1a252f; -fx-text-fill:white; -fx-border-color:#2d3f50; " +
             "-fx-border-radius:7; -fx-background-radius:7; -fx-padding:9; -fx-font-size:13;";
         String lStyle = "-fx-text-fill:" + VERT_LIME + "99; -fx-font-size:10; -fx-font-family:'Consolas';";
 
-        // Sélection salle
         Label lSalle = new Label("SALLE DISPONIBLE"); lSalle.setStyle(lStyle);
         ComboBox<Salle> cbSalle = new ComboBox<>();
         List<Salle> dispos = salleDAO.findAll().stream()
@@ -1248,7 +1222,6 @@ public class MainController {
             public Salle fromString(String s) { return null; }
         });
 
-        // Nature de la session
         Label lNature = new Label("NATURE DE LA SESSION"); lNature.setStyle(lStyle);
         ComboBox<String> cbNature = new ComboBox<>();
         cbNature.getItems().addAll("Révision individuelle", "Travail en groupe", "Projet", "Exposé / Répétition", "Autre");
@@ -1256,14 +1229,12 @@ public class MainController {
         cbNature.setMaxWidth(Double.MAX_VALUE);
         cbNature.setStyle(fStyle);
 
-        // Date
         Label lDate = new Label("DATE DE LA SESSION"); lDate.setStyle(lStyle);
         DatePicker dpDate = new DatePicker(java.time.LocalDate.now());
         dpDate.setMaxWidth(Double.MAX_VALUE);
         dpDate.setStyle(fStyle);
 
-        // Créneau
-        Label lCreneau = new Label("CRÉNEAU HORAIRE"); lCreneau.setStyle(lStyle);
+        Label lCreneau = new Label("CRENEAU HORAIRE"); lCreneau.setStyle(lStyle);
         HBox creneauRow = new HBox(12);
         ComboBox<String> cbDebut = new ComboBox<>();
         ComboBox<String> cbFin   = new ComboBox<>();
@@ -1279,22 +1250,19 @@ public class MainController {
         creneauRow.setAlignment(Pos.CENTER_LEFT);
         creneauRow.getChildren().addAll(cbDebut, lSep, cbFin);
 
-        // Nombre de personnes
         Label lNbP = new Label("NOMBRE DE PARTICIPANTS"); lNbP.setStyle(lStyle);
         TextField fNbP = new TextField("1");
         fNbP.setStyle(fStyle); fNbP.setPrefWidth(120);
 
-        // Commentaire
         Label lComm = new Label("COMMENTAIRE (OPTIONNEL)"); lComm.setStyle(lStyle);
         TextArea taComm = new TextArea();
         taComm.setPromptText("Indiquez l'objet de la session, les besoins particuliers...");
         taComm.setPrefHeight(75); taComm.setWrapText(true);
         taComm.setStyle("-fx-control-inner-background:#1a252f; -fx-text-fill:white; -fx-border-color:#2d3f50; -fx-border-radius:7; -fx-background-radius:7;");
 
-        // Message erreur/succès
         Label lMsg = new Label(""); lMsg.setStyle("-fx-font-size:11;");
 
-        Button btnReserver = new Button("✔ CONFIRMER LA RÉSERVATION");
+        Button btnReserver = new Button("✔ CONFIRMER LA RESERVATION");
         btnReserver.setMaxWidth(Double.MAX_VALUE); btnReserver.setPrefHeight(46);
         styliserBoutonPrimaire(btnReserver);
 
@@ -1307,7 +1275,6 @@ public class MainController {
                 salleChoisie.setEtatSalle("Occupée");
                 salleDAO.update(salleChoisie);
 
-                // Notification email si email renseigné
                 if (etudiant != null && etudiant.getEmail() != null) {
                     notifService.confirmerReservation(etudiant.getEmail(),
                         "Réservation confirmée — Salle " + salleChoisie.getNumeroSalle() +
@@ -1349,11 +1316,6 @@ public class MainController {
         stage.show();
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  HELPERS SPÉCIFIQUES ÉTUDIANT
-    // ══════════════════════════════════════════════════════════════════════════
-
-    /** Grille EDT complète (5 jours × heures) */
     private GridPane construireGrilleEDT(Utilisateur etudiant) {
         GridPane grid = new GridPane();
         grid.setHgap(3); grid.setVgap(3);
@@ -1364,7 +1326,6 @@ public class MainController {
                            "11h00","11h30","12h00","12h30","13h00","13h30","14h00",
                            "14h30","15h00","15h30","16h00","16h30","17h00","17h30","18h00"};
 
-        // En-têtes jours
         for (int c = 0; c < jours.length; c++) {
             Label h = new Label(jours[c]);
             h.setMinWidth(c == 0 ? 68 : 148);
@@ -1376,9 +1337,7 @@ public class MainController {
             grid.add(h, c, 0);
         }
 
-        // Lignes horaires
         for (int r = 0; r < slices.length; r++) {
-            // Colonne heure
             Label slot = new Label(slices[r]);
             slot.setMinWidth(68); slot.setPrefWidth(68);
             slot.setPrefHeight(38); slot.setAlignment(Pos.CENTER);
@@ -1386,7 +1345,6 @@ public class MainController {
                 "; -fx-font-weight:bold; -fx-font-size:10; -fx-font-family:'Consolas';");
             grid.add(slot, 0, r + 1);
 
-            // Colonnes jours
             for (int c = 1; c < jours.length; c++) {
                 Label cell = new Label("");
                 cell.setMinWidth(148); cell.setPrefWidth(148);
@@ -1403,7 +1361,6 @@ public class MainController {
         return grid;
     }
 
-    /** Aperçu planning (bloc compact pour le hub) */
     private VBox construireApercuPlanningEtudiant(Utilisateur etudiant) {
         VBox block = new VBox(12);
         block.setPadding(new Insets(22, 24, 22, 24));
@@ -1419,7 +1376,6 @@ public class MainController {
         Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
         hdrRow.getChildren().addAll(lTitre, sp, btnVoirTout);
 
-        // Grille mini 5 jours × 3 créneaux
         GridPane mini = new GridPane();
         mini.setHgap(8); mini.setVgap(6);
         String[] jMini = {"LUN", "MAR", "MER", "JEU", "VEN"};
@@ -1446,14 +1402,13 @@ public class MainController {
         return block;
     }
 
-    /** Aperçu notifications (bloc compact pour le hub) */
     private VBox construireApercuNotificationsEtudiant(List<Notification> notifs, Utilisateur etudiant) {
         VBox block = new VBox(10);
         block.setPadding(new Insets(20, 22, 20, 22));
         block.setStyle("-fx-background-color:white; -fx-background-radius:18; -fx-effect:dropshadow(three-pass-box,rgba(0,0,0,0.06),10,0,0,3);");
 
         HBox hdrRow = new HBox();
-        Label lT = new Label("🔔 DERNIÈRES NOTIFICATIONS");
+        Label lT = new Label("🔔 DERNIERES NOTIFICATIONS");
         lT.setStyle("-fx-font-family:'Consolas'; -fx-font-size:14; -fx-font-weight:bold; -fx-text-fill:" + BLEU_DEEP + ";");
         Button btnAll = new Button("Tout voir →");
         btnAll.setStyle("-fx-background-color:transparent; -fx-text-fill:" + VERT_LIME + "; -fx-cursor:hand; -fx-font-weight:bold;");
@@ -1472,7 +1427,6 @@ public class MainController {
         return block;
     }
 
-    /** Carte de notification */
     private HBox creerCarteNotification(Notification notif) {
         HBox card = new HBox(14);
         card.setPadding(new Insets(12, 16, 12, 16));
@@ -1508,7 +1462,6 @@ public class MainController {
         return card;
     }
 
-    /** Carte salle détaillée avec bouton réserver (pour recherche) */
     private VBox creerCarteDetailleeSalle(Salle s, Utilisateur etudiant) {
         VBox card = new VBox(12);
         card.setPadding(new Insets(20)); card.setPrefWidth(290);
@@ -1529,12 +1482,11 @@ public class MainController {
         Label lType = new Label("🏷  " + (s.getCategorieSalle() != null ? s.getCategorieSalle() : "—"));
         lType.setStyle("-fx-text-fill:" + GRIS_TEXTE + "; -fx-font-size:12;");
 
-        // Barre capacité visuelle
-        ProgressBar pbCap = new ProgressBar(0.0); // 0 car libre
+        ProgressBar pbCap = new ProgressBar(0.0);
         pbCap.setMaxWidth(Double.MAX_VALUE); pbCap.setPrefHeight(7);
         pbCap.setStyle("-fx-accent:#22c55e;");
 
-        Button btnReserv = new Button("RÉSERVER CETTE SALLE");
+        Button btnReserv = new Button("RESERVER CETTE SALLE");
         btnReserv.setMaxWidth(Double.MAX_VALUE); btnReserv.setPrefHeight(38);
         styliserBoutonPrimaire(btnReserv);
         btnReserv.setOnAction(e -> dialogReserverSalleEtude(etudiant));
@@ -1548,7 +1500,6 @@ public class MainController {
         return card;
     }
 
-    /** Carte compacte salle par bâtiment */
     private VBox creerCarteCompacteSalle(Salle s, Utilisateur etudiant) {
         VBox card = new VBox(8);
         card.setPadding(new Insets(14, 16, 14, 16));
@@ -1566,7 +1517,7 @@ public class MainController {
         Label lCap = new Label("👥 " + s.getCapacite() + " pl.");
         lCap.setStyle("-fx-text-fill:" + GRIS_TEXTE + "; -fx-font-size:11;");
 
-        Label lEtat = new Label(dispo ? "● LIBRE" : "● OCCUPÉE");
+        Label lEtat = new Label(dispo ? "● LIBRE" : "● OCCUPEE");
         lEtat.setStyle("-fx-text-fill:" + (dispo ? "#16a34a" : "#dc2626") +
             "; -fx-font-weight:bold; -fx-font-size:10;");
 
@@ -1580,14 +1531,12 @@ public class MainController {
         return card;
     }
 
-    /** Annuler une réservation étudiant */
     private void annulerReservationEtudiant(Reservation r, Utilisateur etudiant) {
         Alert a = new Alert(Alert.AlertType.CONFIRMATION);
         a.setTitle("Annulation"); a.setHeaderText("Annuler cette réservation ?");
         a.setContentText("La salle sera de nouveau disponible.");
         a.showAndWait().filter(resp -> resp == ButtonType.OK).ifPresent(resp -> {
             r.annulerReservation();
-            // Libérer la salle si le créneau est connu
             if (r.getMonCreneau() != null && r.getMonCreneau().getSalle() != null) {
                 Salle sal = r.getMonCreneau().getSalle();
                 sal.setEtatSalle("Disponible");
@@ -1600,8 +1549,6 @@ public class MainController {
             showMesReservationsEtudiant(etudiant);
         });
     }
-
-    // ── Composants visuels dédiés étudiant ────────────────────────────────────
 
     private VBox creerKpiEtudiant(String ico, String titre, String val, String color, String detail) {
         VBox c = new VBox(7);
@@ -1688,15 +1635,103 @@ public class MainController {
         java.time.LocalDate lundi = today.with(java.time.DayOfWeek.MONDAY);
         return lundi.format(java.time.format.DateTimeFormatter.ofPattern("dd MMMM yyyy", java.util.Locale.FRENCH));
     }
+    
+    @FXML
+    public void showRechercheSalle() {
+        System.out.println("LOG : Redirection via alias showRechercheSalle -> showReservations");
+        // On appelle la méthode que tu as déjà créée pour la recherche/réservation
+        showReservations();
+    }
+    
+    /**
+     * Méthode appelée par le bouton "Profil" du FXML (#showMonProfil)
+     * Redirige vers la vue du profil de l'utilisateur connecté.
+     */
+    @FXML
+    public void showMonProfil() {
+        System.out.println("LOG : Redirection via alias showMonProfil -> showMonProfilEtudiant");
+        // On appelle la méthode de profil que nous avons déjà, 
+        // en passant l'utilisateur actuellement en session.
+        showMonProfilEtudiant(utilisateurConnecte);
+    }
+    
+    @FXML
+    public void showMonEdt() {
+        System.out.println("LOG : Redirection via alias showMonEdt -> showMesCreneaux");
+        showMesCreneaux();
+    }
+    
+    @FXML
+    public void showMesCreneaux() {
+        // 1. Nettoyage de la zone centrale
+        preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+        mainContent.setPadding(new Insets(22, 32, 40, 32));
 
+        // 2. Bouton retour dynamique selon le rôle
+        if ("Enseignant".equalsIgnoreCase(roleConnecte)) {
+            mainContent.getChildren().add(btnRetour(() -> showTeacherView(utilisateurConnecte)));
+        } else {
+            mainContent.getChildren().add(btnRetour(() -> showStudentView(utilisateurConnecte)));
+        }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  SÉLECTEUR DE PROFIL (LOGOUT INTERNE)
-    // ══════════════════════════════════════════════════════════════════════════
+        // 3. Titre et sous-titre
+        Label titre = creerTitre("📋 MES CRENEAUX DE COURS");
+        Label sub = new Label("Liste des séances validées et planifiées dans l'emploi du temps.");
+        sub.setStyle("-fx-text-fill: " + GRIS_TEXTE + "; -fx-font-size: 13;");
 
+        // 4. Configuration du Tableau (TableView)
+        TableView<Creneau> table = new TableView<>();
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        table.setPrefHeight(450);
+        table.setPlaceholder(new Label("Aucun créneau de cours trouvé pour votre profil."));
+        table.setStyle("-fx-background-radius: 12; -fx-border-color: #f1f5f9;");
+
+        // Colonne : Jour
+        TableColumn<Creneau, String> colJour = new TableColumn<>("JOUR");
+        colJour.setCellValueFactory(new PropertyValueFactory<>("jourSemaine"));
+        colJour.setPrefWidth(120);
+
+        // Colonne : Horaire
+        TableColumn<Creneau, String> colHeure = new TableColumn<>("HORAIRE");
+        colHeure.setCellValueFactory(cd -> new SimpleStringProperty(
+            cd.getValue().getHeureDebut() + " - " + cd.getValue().getHeureFin()));
+        colHeure.setPrefWidth(150);
+
+        // Colonne : Salle
+        TableColumn<Creneau, String> colSalle = new TableColumn<>("SALLE");
+        colSalle.setCellValueFactory(cd -> new SimpleStringProperty(
+            cd.getValue().getSalle() != null ? cd.getValue().getSalle().getNumeroSalle() : "N/A"));
+        colSalle.setPrefWidth(100);
+
+        // Colonne : Cours / Matière
+     // Colonne : Cours / Matière
+     // 1. On crée la colonne
+        TableColumn<Creneau, String> colCours = new TableColumn<>("UNITE D'ENSEIGNEMENT");
+
+        // 2. On définit comment récupérer la valeur (UNE SEULE FOIS)
+        colCours.setCellValueFactory(cd -> new SimpleStringProperty(
+            cd.getValue().getCours() != null ? cd.getValue().getCours().getCodeCours() : "Séance libre"
+        ));
+
+        // 3. On ajoute la colonne au tableau
+        table.getColumns().addAll(colJour, colHeure, colSalle, colCours);
+
+        // 5. Chargement des données depuis le DAO
+        try {
+            // Idéalement, filtrer ici par l'identifiant de l'utilisateur connecté
+            List<Creneau> liste = creneauDAO.findAll(); 
+            if (liste != null) {
+                table.getItems().addAll(liste);
+            }
+        } catch (Exception e) {
+            System.err.println("LOG : Erreur lors de la récupération des créneaux : " + e.getMessage());
+        }
+
+        // 6. Assemblage final
+        mainContent.getChildren().addAll(titre, sub, new Separator(), table);
+    }
     @FXML
     public void showLoginSelection() {
-        // Cacher la sidebar — retour à l'écran plein
         if (sidebar != null) {
             sidebar.setVisible(false);
             sidebar.setManaged(false);
@@ -1709,84 +1744,68 @@ public class MainController {
         VBox rootBox = new VBox(50);
         rootBox.setAlignment(Pos.CENTER);
 
-        // ── EN-TÊTE ──────────────────────────────────────────────────────────
         VBox header = new VBox(15);
         header.setAlignment(Pos.CENTER);
 
         Label title = new Label("UNIV-SCHEDULER");
-        title.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 48; " +
-                       "-fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
+        title.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 48; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
 
         Region limeBar = new Region();
         limeBar.setPrefSize(140, 6);
         limeBar.setMaxWidth(140);
         limeBar.setStyle("-fx-background-color: " + VERT_LIME + "; -fx-background-radius: 5;");
 
-        Label subtitle = new Label("SÉLECTIONNEZ VOTRE PORTAIL D'ACCÈS");
-        subtitle.setStyle("-fx-text-fill: #64748b; -fx-font-size: 16; " +
-                          "-fx-font-weight: bold; -fx-letter-spacing: 2px;");
+        Label subtitle = new Label("SELECTIONNEZ VOTRE PORTAIL D'ACCES");
+        subtitle.setStyle("-fx-text-fill: #64748b; -fx-font-size: 16; -fx-font-weight: bold; -fx-letter-spacing: 2px;");
 
         header.getChildren().addAll(title, limeBar, subtitle);
 
-        // ── CARTES PORTAIL (style Image 2 : grande carte + icône circulaire) ─
         HBox cardsBox = new HBox(30);
         cardsBox.setAlignment(Pos.CENTER);
         cardsBox.setPadding(new Insets(20, 0, 0, 0));
 
         cardsBox.getChildren().addAll(
-        	    creerCartePortail("ADMINISTRATEUR", "⚡", "Configuration globale du système",
-        	        e -> showLoginForm("Administrateur")),
-        	    creerCartePortail("GESTIONNAIRE",   "⚒",  "Planification & Emplois du temps",
-        	        e -> showLoginForm("Gestionnaire")),
-        	    creerCartePortail("ENSEIGNANT",     "📖", "Consultation & Réservation",
-        	        e -> showLoginForm("Enseignant")),
-        	    creerCartePortail("ÉTUDIANT",       "🎓", "Consultation des plannings",
-        	        e -> showLoginForm("Étudiant"))
-        	);
+            creerCartePortail("ADMINISTRATEUR", "⚡", "Configuration globale du système", e -> showLoginForm("Administrateur")),
+            creerCartePortail("GESTIONNAIRE",   "⚒",  "Planification & Emplois du temps", e -> showLoginForm("Gestionnaire")),
+            creerCartePortail("ENSEIGNANT",     "📖", "Consultation & Réservation", e -> showLoginForm("Enseignant")),
+            creerCartePortail("ETUDIANT",       "🎓", "Consultation des plannings", e -> showLoginForm("Etudiant"))
+        );
 
         rootBox.getChildren().addAll(header, cardsBox);
         mainContent.getChildren().add(rootBox);
     }
-    
     
     private void showLoginForm(String role) {
         preparerContenu("-fx-background-color: #FFFFFF;");
         mainContent.setAlignment(Pos.CENTER);
         mainContent.setPadding(new Insets(0));
 
-        // ── CONTENEUR PRINCIPAL ───────────────────────────────────────────────
         VBox rootBox = new VBox(0);
         rootBox.setAlignment(Pos.CENTER);
         rootBox.setPrefWidth(Double.MAX_VALUE);
 
-        // ── BANDEAU SUPÉRIEUR ─────────────────────────────────────────────────
         HBox topBand = new HBox();
         topBand.setAlignment(Pos.CENTER_LEFT);
         topBand.setPadding(new Insets(18, 30, 18, 30));
         topBand.setStyle("-fx-background-color: " + BLEU_DEEP + ";");
 
         Label appName = new Label("UNIV-SCHEDULER");
-        appName.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 20; " +
-                         "-fx-font-weight: bold; -fx-text-fill: " + VERT_LIME + ";");
+        appName.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 20; -fx-font-weight: bold; -fx-text-fill: " + VERT_LIME + ";");
 
         Region spacer = new Region(); HBox.setHgrow(spacer, Priority.ALWAYS);
 
         Button btnBack = new Button("← Changer de portail");
-        btnBack.setStyle("-fx-background-color: transparent; -fx-text-fill: #94a3b8; " +
-                         "-fx-font-weight: bold; -fx-cursor: hand;");
+        btnBack.setStyle("-fx-background-color: transparent; -fx-text-fill: #94a3b8; -fx-font-weight: bold; -fx-cursor: hand;");
         btnBack.setOnAction(e -> showLoginSelection());
 
         topBand.getChildren().addAll(appName, spacer, btnBack);
 
-        // ── CARTE LOGIN CENTRALE ──────────────────────────────────────────────
         VBox card = new VBox(24);
         card.setAlignment(Pos.CENTER);
         card.setPadding(new Insets(45, 50, 45, 50));
         card.setMaxWidth(440);
-        card.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 24; " +
-                      "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.35), 25, 0, 0, 8);");
+        card.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 24; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.35), 25, 0, 0, 8);");
 
-        // Icône rôle
         String icon = switch (role) {
             case "Administrateur" -> "⚡";
             case "Gestionnaire"   -> "⚒";
@@ -1803,42 +1822,33 @@ public class MainController {
         iconBox.getChildren().addAll(circle, lIcon);
 
         Label lRole = new Label("PORTAIL " + role.toUpperCase());
-        lRole.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 18; " +
-                       "-fx-font-weight: bold; -fx-text-fill: " + VERT_LIME + ";");
+        lRole.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 18; -fx-font-weight: bold; -fx-text-fill: " + VERT_LIME + ";");
 
         Region sep = new Region(); sep.setPrefSize(60, 3); sep.setMaxWidth(60);
         sep.setStyle("-fx-background-color: " + VERT_LIME + "66; -fx-background-radius: 2;");
 
-        // Champs
         Label lId = new Label("IDENTIFIANT");
         lId.setStyle("-fx-text-fill: " + VERT_LIME + "99; -fx-font-size: 10; -fx-font-family: 'Consolas';");
         TextField txtId = new TextField();
         txtId.setPromptText("ex: admin@univ.sn");
-        txtId.setStyle("-fx-background-color: #1a252f; -fx-text-fill: white; " +
-                       "-fx-border-color: #2d3f50; -fx-border-radius: 8; " +
-                       "-fx-background-radius: 8; -fx-padding: 12; -fx-font-size: 13;");
+        txtId.setStyle("-fx-background-color: #1a252f; -fx-text-fill: white; -fx-border-color: #2d3f50; -fx-border-radius: 8; -fx-background-radius: 8; -fx-padding: 12; -fx-font-size: 13;");
         VBox.setMargin(txtId, new Insets(0, 0, 4, 0));
 
         Label lPw = new Label("MOT DE PASSE");
         lPw.setStyle("-fx-text-fill: " + VERT_LIME + "99; -fx-font-size: 10; -fx-font-family: 'Consolas';");
         PasswordField txtPw = new PasswordField();
         txtPw.setPromptText("••••••••");
-        txtPw.setStyle("-fx-background-color: #1a252f; -fx-text-fill: white; " +
-                       "-fx-border-color: #2d3f50; -fx-border-radius: 8; " +
-                       "-fx-background-radius: 8; -fx-padding: 12; -fx-font-size: 13;");
+        txtPw.setStyle("-fx-background-color: #1a252f; -fx-text-fill: white; -fx-border-color: #2d3f50; -fx-border-radius: 8; -fx-background-radius: 8; -fx-padding: 12; -fx-font-size: 13;");
 
-        // Label erreur
         Label lErr = new Label("");
         lErr.setStyle("-fx-text-fill: #ef4444; -fx-font-size: 11; -fx-font-family: 'Consolas';");
         lErr.setVisible(false);
 
-        // Bouton connexion
         Button btnLogin = new Button("SE CONNECTER →");
         btnLogin.setMaxWidth(Double.MAX_VALUE);
         btnLogin.setPrefHeight(46);
         styliserBoutonPrimaire(btnLogin);
 
-        // ── LOGIQUE D'AUTHENTIFICATION ────────────────────────────────────────
         Runnable tenterConnexion = () -> {
             String identifiant = txtId.getText().trim();
             String motDePasse  = txtPw.getText();
@@ -1873,9 +1883,7 @@ public class MainController {
                     return;
                 }
 
-                // ── CONNEXION RÉUSSIE ─────────────────────────────────────────
                 pause.setOnFinished(ev -> {
-                    // ← CORRECTIF : stocker l'utilisateur connecté
                     utilisateurConnecte = u;
                     roleConnecte        = role;
 
@@ -1887,6 +1895,9 @@ public class MainController {
                         default               -> showStudentView(u);
                     }
                 });
+                
+                // 👇 AJOUTE CETTE LIGNE JUSTE ICI 👇
+                pause.play();
 
             } catch (Exception ex) {
                 lErr.setText("⚠ Erreur système : " + ex.getMessage());
@@ -1895,16 +1906,10 @@ public class MainController {
         };
 
         btnLogin.setOnAction(e -> tenterConnexion.run());
-        txtPw.setOnAction(e -> tenterConnexion.run()); // Entrée dans le champ
+        txtPw.setOnAction(e -> tenterConnexion.run()); 
 
-        card.getChildren().addAll(
-            iconBox, lRole, sep,
-            lId, txtId,
-            lPw, txtPw,
-            lErr, btnLogin
-        );
+        card.getChildren().addAll(iconBox, lRole, sep, lId, txtId, lPw, txtPw, lErr, btnLogin);
 
-        // ── FOOTER ────────────────────────────────────────────────────────────
         Label footer = new Label("© 2026 UIDT Cyber-System · UNIV-SCHEDULER");
         footer.setStyle("-fx-text-fill: #cbd5e1; -fx-font-size: 10;");
 
@@ -1918,15 +1923,10 @@ public class MainController {
 
         mainContent.getChildren().add(rootBox);
 
-        // Focus auto sur le champ identifiant
         Platform.runLater(txtId::requestFocus);
     }
-    /**
-     * Crée une grande carte portail style Image 2 :
-     * fond sombre, icône circulaire verte, titre + description centrés.
-     */
-    private VBox creerCartePortail(String titre, String icon, String desc,
-                                    EventHandler<MouseEvent> action) {
+
+    private VBox creerCartePortail(String titre, String icon, String desc, EventHandler<MouseEvent> action) {
         VBox card = new VBox(18);
         card.setAlignment(Pos.CENTER);
         card.setPrefSize(270, 210);
@@ -1937,7 +1937,6 @@ public class MainController {
                            "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.25), 15, 0, 0, 6);";
         card.setStyle(baseStyle);
 
-        // Icône dans un cercle vert lime
         StackPane iconBox = new StackPane();
         Region circle = new Region();
         circle.setPrefSize(82, 82);
@@ -1947,12 +1946,9 @@ public class MainController {
         lIcon.setStyle("-fx-font-size: 32; -fx-text-fill: " + BLEU_DEEP + ";");
         iconBox.getChildren().addAll(circle, lIcon);
 
-        // Titre en vert lime
         Label lTitre = new Label(titre);
-        lTitre.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 13; " +
-                        "-fx-text-fill: " + VERT_LIME + ";");
+        lTitre.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: " + VERT_LIME + ";");
 
-        // Description en gris
         Label lDesc = new Label(desc);
         lDesc.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 11;");
         lDesc.setWrapText(true);
@@ -1961,10 +1957,8 @@ public class MainController {
         card.getChildren().addAll(iconBox, lTitre, lDesc);
         card.setOnMouseClicked(action);
 
-        // Hover
         card.setOnMouseEntered(e -> {
-            card.setStyle(baseStyle +
-                "-fx-border-color: " + VERT_LIME + "; -fx-border-width: 2; -fx-border-radius: 20;");
+            card.setStyle(baseStyle + "-fx-border-color: " + VERT_LIME + "; -fx-border-width: 2; -fx-border-radius: 20;");
             card.setTranslateY(-6);
         });
         card.setOnMouseExited(e -> {
@@ -1975,56 +1969,40 @@ public class MainController {
         return card;
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  DASHBOARD (SURVEILLANCE SALLES)
-    // ══════════════════════════════════════════════════════════════════════════
-
     @FXML
     public void showDashboard() {
         preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
+        Label titre = creerTitre("SYSTEME DE SURVEILLANCE — ETAT DES SALLES");
 
-        Label titre = creerTitre("SYSTÈME DE SURVEILLANCE — ÉTAT DES SALLES");
-
-        // ── Données ────────────────────────────────────────────────────────
         List<Salle> salles = salleDAO.findAll();
         if (salles == null || salles.isEmpty()) {
             mainContent.getChildren().addAll(titre, new Label("⚠️ Aucune donnée réseau."));
             return;
         }
-        long libres   = salles.stream()
-            .filter(s -> s.getEtatSalle() != null && "Disponible".equalsIgnoreCase(s.getEtatSalle()))
-            .count();
+        long libres   = salles.stream().filter(s -> s.getEtatSalle() != null && "Disponible".equalsIgnoreCase(s.getEtatSalle())).count();
         long occupees = salles.size() - libres;
 
-        // ── KPIs ───────────────────────────────────────────────────────────
         HBox stats = new HBox(25);
         stats.setPadding(new Insets(20, 0, 25, 0));
         stats.getChildren().addAll(
             creerWidgetStat("TOTAL SALLES",  String.valueOf(salles.size())),
             creerWidgetStat("DISPONIBLES",   String.valueOf(libres)),
-            creerWidgetStat("OCCUPÉES",      String.valueOf(occupees))
+            creerWidgetStat("OCCUPEES",      String.valueOf(occupees))
         );
 
-        // ── Liste des salles (FlowPane) ────────────────────────────────────
         containerSalles = new FlowPane(20, 20);
         containerSalles.setPadding(new Insets(10, 0, 0, 0));
         rafraichirListeSalles(false, "");
 
         mainContent.getChildren().addAll(titre, stats, new Separator(), containerSalles);
-        // ← PieChart supprimé ici — désormais dans showSallesManagement()
     }
     
-    // ══════════════════════════════════════════════════════════════════════════
-    //  MODULE COMMUN : RÉSERVATIONS (ASSISTANT INTELLIGENT)
-    // ══════════════════════════════════════════════════════════════════════════
-
     @FXML
     private void showReservations() {
         preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
 
         Label titre = creerTitre("SENSORS & BOOKING HUB");
 
-        // ── Console de recherche ───────────────────────────────────────────
         VBox console = new VBox(18);
         console.setPadding(new Insets(25));
         console.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 18;");
@@ -2047,16 +2025,13 @@ public class MainController {
 
         console.getChildren().addAll(row1, new Separator(), row2);
 
-        // ── Stepper ────────────────────────────────────────────────────────
-        HBox stepper = construireStepper("1. CONFIGURATION", "2. ANALYSE", "3. RÉSERVATION");
+        HBox stepper = construireStepper("1. CONFIGURATION", "2. ANALYSE", "3. RESERVATION");
 
-        // ── Zone résultats ─────────────────────────────────────────────────
         FlowPane resultats = new FlowPane(22, 22);
         resultats.setPadding(new Insets(8, 0, 8, 0));
         ScrollPane scroll = creerScrollPane(resultats, 420);
         VBox.setVgrow(scroll, Priority.ALWAYS);
 
-        // ── Logique du scan ────────────────────────────────────────────────
         btnScan.setOnAction(e -> {
             resultats.getChildren().clear();
             try {
@@ -2084,10 +2059,6 @@ public class MainController {
         VBox layout = new VBox(18, titre, console, stepper, scroll);
         mainContent.getChildren().add(layout);
     }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  MODULE COMMUN : NOTIFICATIONS
-    // ══════════════════════════════════════════════════════════════════════════
 
     @FXML
     private void showNotifications() {
@@ -2128,21 +2099,14 @@ public class MainController {
         mainContent.getChildren().addAll(titre, table);
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  SOUS-MODULE ENSEIGNANT : CRÉNEAUX
-    // ══════════════════════════════════════════════════════════════════════════
-
     private void showCreneauxEnseignant(Utilisateur enseignant) {
         preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
-
         mainContent.getChildren().add(btnRetour(() -> showTeacherView(enseignant)));
-
-        Label titre = creerTitre("📅 MES RÉSERVATIONS");
+        Label titre = creerTitre("📅 MES RESERVATIONS");
 
         VBox placeholder = new VBox();
         placeholder.setAlignment(Pos.CENTER); placeholder.setPrefHeight(300);
-        placeholder.setStyle("-fx-background-color: #f8fafc; -fx-border-color: #e2e8f0; " +
-                             "-fx-border-radius: 12; -fx-background-radius: 12;");
+        placeholder.setStyle("-fx-background-color: #f8fafc; -fx-border-color: #e2e8f0; -fx-border-radius: 12; -fx-background-radius: 12;");
         Label msg = new Label("Les créneaux validés pour " +
                 (enseignant != null ? enseignant.getNom() : "cet enseignant") +
                 " s'afficheront ici.");
@@ -2152,10 +2116,6 @@ public class MainController {
         mainContent.getChildren().addAll(titre, placeholder);
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  SOUS-MODULE ADMIN : GESTION UTILISATEURS
-    // ══════════════════════════════════════════════════════════════════════════
-
     @FXML
     public void showUserManagement() {
         preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
@@ -2163,14 +2123,12 @@ public class MainController {
 
         mainContent.getChildren().add(btnRetour(this::showAdminPanel));
 
-        Label titre = creerTitre("👤 RÉPERTOIRE DES UTILISATEURS");
+        Label titre = creerTitre("👤 REPERTOIRE DES UTILISATEURS");
 
-        // ── Barre d'outils ─────────────────────────────────────────────────
         TextField search = new TextField();
         search.setPromptText("🔍 Rechercher par nom ou email...");
         search.setPrefWidth(380);
-        search.setStyle("-fx-background-radius: 8; -fx-padding: 9; " +
-                        "-fx-border-color: #e2e8f0; -fx-border-radius: 8;");
+        search.setStyle("-fx-background-radius: 8; -fx-padding: 9; -fx-border-color: #e2e8f0; -fx-border-radius: 8;");
 
         Button btnAjouter = new Button("+ NOUVEL UTILISATEUR");
         styliserBoutonSecondaire(btnAjouter);
@@ -2181,7 +2139,6 @@ public class MainController {
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.setPadding(new Insets(10, 0, 10, 0));
 
-        // ── Tableau ────────────────────────────────────────────────────────
         TableView<Utilisateur> table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         table.setPrefHeight(480);
@@ -2190,13 +2147,13 @@ public class MainController {
         TableColumn<Utilisateur, String> colNom   = new TableColumn<>("NOM");
         colNom.setCellValueFactory(new PropertyValueFactory<>("nom"));
 
-        TableColumn<Utilisateur, String> colPrenom = new TableColumn<>("PRÉNOM");
+        TableColumn<Utilisateur, String> colPrenom = new TableColumn<>("PRENOM");
         colPrenom.setCellValueFactory(new PropertyValueFactory<>("prenom"));
 
         TableColumn<Utilisateur, String> colEmail  = new TableColumn<>("EMAIL");
         colEmail.setCellValueFactory(new PropertyValueFactory<>("email"));
 
-        TableColumn<Utilisateur, String> colRole   = new TableColumn<>("RÔLE");
+        TableColumn<Utilisateur, String> colRole   = new TableColumn<>("ROLE");
         colRole.setCellValueFactory(new PropertyValueFactory<>("role"));
         colRole.setPrefWidth(140);
 
@@ -2232,17 +2189,12 @@ public class MainController {
         mainContent.getChildren().addAll(titre, toolbar, table);
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  SOUS-MODULE ADMIN : GESTION SALLES & BÂTIMENTS
-    // ══════════════════════════════════════════════════════════════════════════
-
     private void showSallesManagement() {
         preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
         mainContent.setPadding(new Insets(25, 40, 40, 40));
 
         mainContent.getChildren().add(btnRetour(this::showAdminPanel));
 
-        // ── En-tête + sélecteur de vue ─────────────────────────────────────
         ComboBox<String> vueSel = new ComboBox<>();
         vueSel.getItems().addAll("Salles", "Bâtiments");
         vueSel.setValue("Salles");
@@ -2252,10 +2204,9 @@ public class MainController {
             else showSallesManagement();
         });
 
-        HBox headerBox = new HBox(20, creerTitre("🏢 RÉSEAU DES LOCAUX"), vueSel);
+        HBox headerBox = new HBox(20, creerTitre("🏢 RESEAU DES LOCAUX"), vueSel);
         headerBox.setAlignment(Pos.CENTER_LEFT);
 
-        // ── PIE CHART (déplacé du tableau de bord) ─────────────────────────
         List<Salle> salles = salleDAO.findAll();
         if (salles == null) salles = new java.util.ArrayList<>();
 
@@ -2267,7 +2218,7 @@ public class MainController {
             new PieChart.Data("Disponibles", libres),
             new PieChart.Data("Occupées",    occupees)
         ));
-        pie.setTitle("RÉPARTITION DES LOCAUX");
+        pie.setTitle("REPARTITION DES LOCAUX");
         pie.setLabelsVisible(false);
         pie.setLegendVisible(true);
         pie.setAnimated(true);
@@ -2277,15 +2228,12 @@ public class MainController {
         chartBox.setAlignment(Pos.CENTER);
         chartBox.setPadding(new Insets(16));
         chartBox.setMaxWidth(420);
-        chartBox.setStyle("-fx-background-color: " + BLEU_DEEP +
-            "; -fx-background-radius: 20;");
+        chartBox.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 20;");
 
-        // Couleurs correctes : vert lime = disponibles, rouge = occupées
-        final String C_DISPO = VERT_LIME;   // "#A3FF33"
+        final String C_DISPO = VERT_LIME;   
         final String C_OCC   = "#EF4444";
 
         javafx.application.Platform.runLater(() -> {
-            // 1. Colorier les tranches
             java.util.List<PieChart.Data> data = pie.getData();
             String[] SLICE_COLORS = {C_DISPO, C_OCC};
             for (int i = 0; i < data.size(); i++) {
@@ -2298,31 +2246,26 @@ public class MainController {
                 glow.setRadius(18);
                 node.setEffect(glow);
             }
-            // 2. Fixer les couleurs de la légende (symboles circulaires)
             int idx = 0;
             for (javafx.scene.Node sym : pie.lookupAll(".chart-legend-item-symbol")) {
                 sym.setStyle("-fx-background-color: " + SLICE_COLORS[idx % 2] + ", white;");
                 idx++;
             }
-            // 3. Labels légende en blanc
             for (javafx.scene.Node item : pie.lookupAll(".chart-legend-item")) {
                 if (item instanceof Label)
                     ((Label) item).setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
             }
-            // 4. Titre du graphique
             javafx.scene.Node chartTitle = pie.lookup(".chart-title");
             if (chartTitle != null)
-                chartTitle.setStyle("-fx-text-fill: " + VERT_LIME +
-                    "; -fx-font-family: 'Consolas'; -fx-font-size: 15;");
+                chartTitle.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-family: 'Consolas'; -fx-font-size: 15;");
         });
 
-        // ── Barre outils ────────────────────────────────────────────────────
         Button btnAddS = new Button("+ NOUVELLE SALLE");
         btnAddS.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME +
             "; -fx-font-weight: bold; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand;");
         btnAddS.setOnAction(e -> dialogAjouterSalle());
 
-        Button btnAddB = new Button("+ NOUVEAU BÂTIMENT");
+        Button btnAddB = new Button("+ NOUVEAU BATIMENT");
         btnAddB.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME +
             "; -fx-font-weight: bold; -fx-padding: 10 18; -fx-background-radius: 10; -fx-cursor: hand;");
         btnAddB.setOnAction(e -> dialogAjouterBatiment());
@@ -2330,7 +2273,6 @@ public class MainController {
         HBox toolbar = new HBox(14, btnAddS, btnAddB);
         toolbar.setPadding(new Insets(0, 0, 12, 0));
 
-        // ── Tableau salles ──────────────────────────────────────────────────
         TableView<Salle> table = new TableView<>();
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         table.setPrefHeight(380);
@@ -2339,12 +2281,12 @@ public class MainController {
         TableColumn<Salle, String> colNum = new TableColumn<>("N° SALLE");
         colNum.setCellValueFactory(new PropertyValueFactory<>("numeroSalle"));
 
-        TableColumn<Salle, String> colBat = new TableColumn<>("BÂTIMENT");
+        TableColumn<Salle, String> colBat = new TableColumn<>("BATIMENT");
         colBat.setCellValueFactory(cd -> new SimpleStringProperty(
             cd.getValue().getBatiment() != null
                 ? cd.getValue().getBatiment().getNomBatiment() : "—"));
 
-        TableColumn<Salle, Integer> colCap = new TableColumn<>("CAPACITÉ");
+        TableColumn<Salle, Integer> colCap = new TableColumn<>("CAPACITE");
         colCap.setCellValueFactory(new PropertyValueFactory<>("capacite"));
         colCap.setPrefWidth(90);
 
@@ -2352,7 +2294,7 @@ public class MainController {
         colCat.setCellValueFactory(new PropertyValueFactory<>("categorieSalle"));
         colCat.setPrefWidth(100);
 
-        TableColumn<Salle, String> colEtat = new TableColumn<>("ÉTAT");
+        TableColumn<Salle, String> colEtat = new TableColumn<>("ETAT");
         colEtat.setCellValueFactory(new PropertyValueFactory<>("etatSalle"));
         colEtat.setPrefWidth(110);
         colEtat.setCellFactory(col -> new TableCell<>() {
@@ -2361,8 +2303,7 @@ public class MainController {
                 if (empty || v == null) { setText(null); setStyle(""); return; }
                 setText(v.toUpperCase());
                 boolean dispo = "Disponible".equalsIgnoreCase(v);
-                setStyle("-fx-text-fill: " + (dispo ? "#16a34a" : "#ef4444") +
-                    "; -fx-font-weight: bold;");
+                setStyle("-fx-text-fill: " + (dispo ? "#16a34a" : "#ef4444") + "; -fx-font-weight: bold;");
             }
         });
 
@@ -2387,7 +2328,6 @@ public class MainController {
         table.getColumns().addAll(colNum, colBat, colCap, colCat, colEtat, colAct);
         if (!salles.isEmpty()) table.getItems().addAll(salles);
 
-        // ── Assemblage : chart + tableau côte à côte ───────────────────────
         HBox mainRow = new HBox(30, table, chartBox);
         mainRow.setAlignment(Pos.TOP_LEFT);
         HBox.setHgrow(table, Priority.ALWAYS);
@@ -2395,14 +2335,13 @@ public class MainController {
         mainContent.getChildren().addAll(headerBox, toolbar, mainRow);
     }
 
-
     private void showBatimentsManagement() {
         preparerContenu("-fx-background-color: " + FOND_BLANC + ";");
         mainContent.setPadding(new Insets(25, 40, 40, 40));
 
         mainContent.getChildren().add(btnRetour(this::showSallesManagement));
 
-        Button btnAdd = new Button("+ NOUVEAU BÂTIMENT");
+        Button btnAdd = new Button("+ NOUVEAU BATIMENT");
         styliserBoutonSecondaire(btnAdd);
         btnAdd.setOnAction(e -> dialogAjouterBatiment());
 
@@ -2424,7 +2363,7 @@ public class MainController {
         TableColumn<Batiment, String> colLoc  = new TableColumn<>("LOCALISATION");
         colLoc.setCellValueFactory(new PropertyValueFactory<>("localisationBatiment"));
 
-        TableColumn<Batiment, Integer> colEt  = new TableColumn<>("ÉTAGES");
+        TableColumn<Batiment, Integer> colEt  = new TableColumn<>("ETAGES");
         colEt.setCellValueFactory(new PropertyValueFactory<>("nbEtage"));
         colEt.setPrefWidth(80);
 
@@ -2432,12 +2371,8 @@ public class MainController {
         List<Batiment> bats = batimentDAO.findAll();
         if (bats != null) table.getItems().addAll(bats);
 
-        mainContent.getChildren().addAll(creerTitre("🏗️ RÉPERTOIRE DES BÂTIMENTS"), toolbar, table);
+        mainContent.getChildren().addAll(creerTitre("🏗️ REPERTOIRE DES BATIMENTS"), toolbar, table);
     }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  SOUS-MODULE ADMIN : INVENTAIRE ÉQUIPEMENTS
-    // ══════════════════════════════════════════════════════════════════════════
 
     @FXML
     private void showInventoryManagement() {
@@ -2446,7 +2381,7 @@ public class MainController {
 
         mainContent.getChildren().add(btnRetour(this::showAdminPanel));
 
-        Button btnAdd = new Button("+ NOUVEL ÉQUIPEMENT");
+        Button btnAdd = new Button("+ NOUVEL EQUIPEMENT");
         styliserBoutonSecondaire(btnAdd);
         btnAdd.setOnAction(e -> dialogAjouterEquipement());
 
@@ -2458,10 +2393,10 @@ public class MainController {
         table.setPrefHeight(460);
         table.setPlaceholder(new Label("Aucun équipement enregistré."));
 
-        TableColumn<Equipement, String> colNom   = new TableColumn<>("ÉQUIPEMENT");
+        TableColumn<Equipement, String> colNom   = new TableColumn<>("EQUIPEMENT");
         colNom.setCellValueFactory(new PropertyValueFactory<>("nomEquipement"));
 
-        TableColumn<Equipement, String> colEtat  = new TableColumn<>("ÉTAT");
+        TableColumn<Equipement, String> colEtat  = new TableColumn<>("ETAT");
         colEtat.setCellValueFactory(new PropertyValueFactory<>("etatFonctionnement"));
         colEtat.setPrefWidth(130);
         colEtat.setCellFactory(col -> new TableCell<>() {
@@ -2498,16 +2433,9 @@ public class MainController {
         List<Equipement> equips = equipementDAO.findAll();
         if (equips != null) table.getItems().addAll(equips);
 
-        mainContent.getChildren().addAll(creerTitre("⚙️ INVENTAIRE MATÉRIEL"), toolbar, table);
+        mainContent.getChildren().addAll(creerTitre("⚙️ INVENTAIRE MATERIEL"), toolbar, table);
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  SOUS-MODULES GESTIONNAIRE
-    // ══════════════════════════════════════════════════════════════════════════
-
-    
-    
-    
     @FXML
     public void moduleGestionCours() {
         preparerContenu("-fx-background-color: #f8fafc;");
@@ -2519,131 +2447,333 @@ public class MainController {
             "Création, modification et suppression des unités d'enseignement.");
 
         TextField search = new TextField();
-        search.setPromptText("🔍 Rechercher un cours...");
+        search.setPromptText("🔍 Rechercher un code ou une matière...");
         search.setPrefWidth(340);
-        search.setStyle("-fx-background-radius: 8; -fx-padding: 8; " +
-                        "-fx-border-color: #cbd5e1; -fx-border-radius: 8;");
+        search.setStyle("-fx-background-radius: 8; -fx-padding: 8; -fx-border-color: #cbd5e1; -fx-border-radius: 8;");
 
         Button btnAdd = new Button("+ NOUVEAU COURS");
         styliserBoutonSecondaire(btnAdd);
-        btnAdd.setOnAction(e -> afficherAlerte("COURS", "Module de création de cours à connecter au CoursDAO."));
+        btnAdd.setOnAction(e -> dialogAjouterCours());
 
         Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
         HBox toolbar = new HBox(15, search, sp, btnAdd);
         toolbar.setAlignment(Pos.CENTER_LEFT);
         toolbar.setPadding(new Insets(20, 0, 20, 0));
 
-        VBox placeholder = construirePlaceholder(
-            "📋 Tableau des cours (CoursDAO)",
-            "Colonnes : Matière · Enseignant · Classe · Groupe · Heures",
-            400
+        TableView<Cours> table = new TableView<>();
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        table.setPrefHeight(420);
+        table.setPlaceholder(new Label("Aucun cours enregistré."));
+
+        TableColumn<Cours, String> colCode = new TableColumn<>("CODE COURS");
+        colCode.setCellValueFactory(new PropertyValueFactory<>("codeCours"));
+        colCode.setPrefWidth(120);
+
+        TableColumn<Cours, String> colMat = new TableColumn<>("INTITULÉ DE LA MATIÈRE");
+        colMat.setCellValueFactory(new PropertyValueFactory<>("intituleMatiere"));
+
+        TableColumn<Cours, Double> colHeures = new TableColumn<>("VOLUME HORAIRE (H)");
+        colHeures.setCellValueFactory(new PropertyValueFactory<>("nbrHeure"));
+        colHeures.setPrefWidth(140);
+        
+        TableColumn<Cours, Double> colFait = new TableColumn<>("HEURES FAITES");
+        colFait.setCellValueFactory(new PropertyValueFactory<>("heuresEffectuees"));
+        colFait.setPrefWidth(130);
+
+        TableColumn<Cours, Void> colAct = new TableColumn<>("ACTIONS");
+        colAct.setPrefWidth(100);
+        colAct.setCellFactory(p -> new TableCell<>() {
+            private final Button eBtn = new Button("✏️");
+            private final Button dBtn = new Button("🗑");
+            private final HBox h = new HBox(10, eBtn, dBtn);
+            {
+                h.setAlignment(Pos.CENTER);
+                eBtn.setStyle("-fx-background-color: transparent; -fx-cursor: hand;");
+                dBtn.setStyle("-fx-background-color: transparent; -fx-text-fill: #ef4444; -fx-cursor: hand;");
+                eBtn.setOnAction(ev -> dialogModifierCours(getTableView().getItems().get(getIndex())));
+                dBtn.setOnAction(ev -> confirmerSuppressionCours(getTableView().getItems().get(getIndex())));
+            }
+            @Override protected void updateItem(Void v, boolean empty) {
+                super.updateItem(v, empty); setGraphic(empty ? null : h);
+            }
+        });
+
+        table.getColumns().addAll(colCode, colMat, colHeures, colFait, colAct);
+
+        try {
+            CoursDAO coursDAO = new CoursDAO(HibernateUtil.getSessionFactory());
+            List<Cours> liste = coursDAO.findAll();
+            if (liste != null) {
+                ObservableList<Cours> data = FXCollections.observableArrayList(liste);
+                table.setItems(data);
+                
+                search.textProperty().addListener((obs, o, n) -> {
+                    String f = n.toLowerCase();
+                    table.setItems(data.filtered(c -> 
+                        (c.getCodeCours() != null && c.getCodeCours().toLowerCase().contains(f)) ||
+                        (c.getIntituleMatiere() != null && c.getIntituleMatiere().toLowerCase().contains(f))
+                    ));
+                });
+            }
+        } catch (Exception ex) {
+            System.err.println("LOG : Erreur de chargement des cours : " + ex.getMessage());
+        }
+
+        mainContent.getChildren().addAll(header, toolbar, table);
+    }
+
+    private void dialogAjouterCours() {
+        Dialog<ButtonType> dlg = creerDialog("ENREGISTRER UN NOUVEAU COURS");
+
+        TextField txtCode = creerChampCyber("Ex: INFO-301");
+        TextField txtMat  = creerChampCyber("Ex: Algorithmique Avancée");
+        TextField txtHeures = creerChampCyber("Ex: 40.5 (Volume global)");
+
+        VBox form = getDialogForm(dlg);
+        form.getChildren().addAll(
+            creerLabel("CODE DU COURS :"), txtCode,
+            creerLabel("INTITULÉ DE LA MATIÈRE :"), txtMat,
+            creerLabel("VOLUME HORAIRE TOTAL :"), txtHeures
         );
 
-        mainContent.getChildren().addAll(header, toolbar, placeholder);
+        dlg.showAndWait().ifPresent(r -> {
+            if (r != ButtonType.OK) return;
+            
+            if (txtCode.getText().trim().isEmpty() || txtMat.getText().trim().isEmpty() || txtHeures.getText().trim().isEmpty()) {
+                afficherAlerte("Erreur", "Tous les champs sont obligatoires.");
+                return;
+            }
+            
+            try {
+                Cours c = new Cours();
+                c.setCodeCours(txtCode.getText().trim().toUpperCase());
+                c.setIntituleMatiere(txtMat.getText().trim());
+                c.setNbrHeure(Double.parseDouble(txtHeures.getText().trim()));
+                c.setHeuresEffectuees(0.0); // Initialisé à zéro à la création
+                
+                CoursDAO coursDAO = new CoursDAO(HibernateUtil.getSessionFactory());
+                coursDAO.save(c);
+                moduleGestionCours(); // Rafraîchit le tableau
+                afficherAlerte("Succès", "Le cours " + c.getCodeCours() + " a été ajouté avec succès.");
+            } catch (NumberFormatException ex) {
+                afficherAlerte("Erreur de saisie", "Le volume horaire doit être un nombre valide (ex: 40 ou 40.5).");
+            } catch (Exception ex) {
+                afficherAlerte("Erreur base de données", "Impossible de sauvegarder le cours. Le code existe peut-être déjà.");
+            }
+        });
+    }
+
+    private void dialogModifierCours(Cours cours) {
+        Dialog<ButtonType> dlg = creerDialog("MODIFIER LE COURS " + cours.getCodeCours());
+
+        TextField txtMat = creerChampCyber(cours.getIntituleMatiere() != null ? cours.getIntituleMatiere() : "");
+        TextField txtHeures = creerChampCyber(String.valueOf(cours.getNbrHeure()));
+
+        VBox form = getDialogForm(dlg);
+        form.getChildren().addAll(
+            creerLabel("INTITULÉ DE LA MATIÈRE :"), txtMat,
+            creerLabel("VOLUME HORAIRE TOTAL :"), txtHeures
+        );
+
+        dlg.showAndWait().ifPresent(r -> {
+            if (r != ButtonType.OK) return;
+            
+            if (txtMat.getText().trim().isEmpty() || txtHeures.getText().trim().isEmpty()) {
+                afficherAlerte("Erreur", "Tous les champs sont obligatoires.");
+                return;
+            }
+            
+            try {
+                cours.setIntituleMatiere(txtMat.getText().trim());
+                cours.setNbrHeure(Double.parseDouble(txtHeures.getText().trim()));
+                
+                CoursDAO coursDAO = new CoursDAO(HibernateUtil.getSessionFactory());
+                coursDAO.update(cours);
+                moduleGestionCours(); // Rafraîchit le tableau
+            } catch (NumberFormatException ex) {
+                afficherAlerte("Erreur de saisie", "Le volume horaire doit être un nombre valide.");
+            } catch (Exception ex) {
+                afficherAlerte("Erreur base de données", "Modification échouée : " + ex.getMessage());
+            }
+        });
+    }
+
+    private void confirmerSuppressionCours(Cours cours) {
+        Alert a = new Alert(Alert.AlertType.CONFIRMATION);
+        a.setTitle("Suppression"); 
+        a.setHeaderText("Supprimer le cours " + cours.getCodeCours() + " ?");
+        a.setContentText("Attention : Cette action est irréversible. Si ce cours est lié à des créneaux dans l'emploi du temps, la suppression échouera pour préserver l'intégrité des données.");
+        
+        a.showAndWait().filter(r -> r == ButtonType.OK).ifPresent(r -> {
+            try {
+                CoursDAO coursDAO = new CoursDAO(HibernateUtil.getSessionFactory());
+                coursDAO.delete(cours); 
+                moduleGestionCours();
+            } catch (Exception ex) {
+                afficherAlerte("Erreur critique", "Ce cours ne peut pas être supprimé. Il est probablement déjà assigné à un enseignant ou à un créneau.");
+            }
+        });
     }
 
     @FXML
     public void moduleAssignationSalles() {
         preparerContenu("-fx-background-color: #f8fafc;");
         mainContent.setPadding(new Insets(20, 40, 40, 40));
-
         mainContent.getChildren().add(btnRetour(this::showManagerDashboard));
 
         VBox header = construireHeader("🔑 ASSIGNATION DES SALLES",
             "Liaison des cours aux infrastructures physiques disponibles.");
 
-        // Interface de mapping visuel (cours ↔ salle)
-        HBox mapping = new HBox(40);
-        mapping.setPadding(new Insets(30, 0, 0, 0));
-        mapping.setAlignment(Pos.TOP_CENTER);
+        // --- TABLEAU GAUCHE : COURS ---
+        TableView<Cours> tableCours = new TableView<>();
+        tableCours.setPrefSize(380, 350);
+        tableCours.setPlaceholder(new Label("Aucun cours disponible."));
+        
+        TableColumn<Cours, String> colCode = new TableColumn<>("CODE");
+        colCode.setCellValueFactory(new PropertyValueFactory<>("codeCours"));
+        colCode.setPrefWidth(100);
+        
+        TableColumn<Cours, String> colMat = new TableColumn<>("MATIÈRE");
+        colMat.setCellValueFactory(new PropertyValueFactory<>("intituleMatiere"));
+        
+        tableCours.getColumns().addAll(colCode, colMat);
+        tableCours.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
 
-        VBox colCours = construirePlaceholder("📋 COURS EN ATTENTE",
-            "Les cours sans salle assignée s'affichent ici.", 300);
-        colCours.setPrefWidth(300);
+        // --- TABLEAU DROITE : SALLES DISPONIBLES ---
+        TableView<Salle> tableSalles = new TableView<>();
+        tableSalles.setPrefSize(380, 350);
+        tableSalles.setPlaceholder(new Label("Aucune salle libre."));
+        
+        TableColumn<Salle, String> colNum = new TableColumn<>("SALLE");
+        colNum.setCellValueFactory(new PropertyValueFactory<>("numeroSalle"));
+        
+        TableColumn<Salle, Integer> colCap = new TableColumn<>("CAPACITÉ");
+        colCap.setCellValueFactory(new PropertyValueFactory<>("capacite"));
+        
+        tableSalles.getColumns().addAll(colNum, colCap);
+        tableSalles.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+
+        // --- CHARGEMENT DES DONNÉES ---
+        try {
+            CoursDAO coursDAO = new CoursDAO(HibernateUtil.getSessionFactory());
+            List<Cours> listeCours = coursDAO.findAll();
+            if (listeCours != null) tableCours.getItems().addAll(listeCours);
+
+            List<Salle> listeSalles = salleDAO.findAll().stream()
+                .filter(s -> "Disponible".equalsIgnoreCase(s.getEtatSalle()))
+                .collect(Collectors.toList());
+            if (listeSalles != null) tableSalles.getItems().addAll(listeSalles);
+        } catch (Exception e) {
+            System.err.println("LOG : Erreur de chargement pour l'assignation.");
+        }
+
+        // --- MISE EN PAGE ---
+        VBox boxCours = new VBox(12, new Label("📋 COURS EN ATTENTE"){{setStyle("-fx-font-weight:bold;-fx-text-fill:"+BLEU_DEEP+";");}}, tableCours);
+        boxCours.setStyle("-fx-background-color:white;-fx-padding:20;-fx-background-radius:12;-fx-border-color:#e2e8f0;-fx-border-radius:12;");
 
         Label fleche = new Label("➡");
-        fleche.setStyle("-fx-font-size: 34; -fx-text-fill: " + VERT_LIME + ";");
-        VBox.setMargin(fleche, new Insets(100, 0, 0, 0));
+        fleche.setStyle("-fx-font-size: 40; -fx-text-fill: " + VERT_LIME + ";");
+        VBox boxFleche = new VBox(fleche); boxFleche.setAlignment(Pos.CENTER);
 
-        VBox colSalles = construirePlaceholder("🏢 SALLES DISPONIBLES",
-            "Filtrées par capacité et disponibilité.", 300);
-        colSalles.setPrefWidth(300);
+        VBox boxSalles = new VBox(12, new Label("🏢 SALLES DISPONIBLES"){{setStyle("-fx-font-weight:bold;-fx-text-fill:"+BLEU_DEEP+";");}}, tableSalles);
+        boxSalles.setStyle("-fx-background-color:white;-fx-padding:20;-fx-background-radius:12;-fx-border-color:#e2e8f0;-fx-border-radius:12;");
 
+        HBox mapping = new HBox(30, boxCours, boxFleche, boxSalles);
+        mapping.setAlignment(Pos.CENTER);
+        mapping.setPadding(new Insets(20, 0, 30, 0));
+
+        // --- BOUTON DE VALIDATION ---
         Button btnValider = new Button("VALIDER L'ASSIGNATION");
         styliserBoutonPrimaire(btnValider);
-        btnValider.setOnAction(e -> afficherAlerte("ASSIGNATION", "À connecter au CreneauDAO pour persister."));
+        btnValider.setPrefHeight(45);
+        btnValider.setPrefWidth(300);
+        
+        btnValider.setOnAction(e -> {
+            Cours c = tableCours.getSelectionModel().getSelectedItem();
+            Salle s = tableSalles.getSelectionModel().getSelectedItem();
+            
+            if (c == null || s == null) {
+                afficherAlerte("Sélection incomplète", "Veuillez sélectionner un cours à gauche ET une salle à droite.");
+                return;
+            }
+            dialogFinaliserAssignation(c, s);
+        });
 
-        mapping.getChildren().addAll(colCours, fleche, colSalles);
-
-        VBox layout = new VBox(20, header, mapping, btnValider);
+        VBox layout = new VBox(15, header, mapping, btnValider);
         layout.setAlignment(Pos.TOP_CENTER);
         mainContent.getChildren().add(layout);
     }
+    
+    private void dialogFinaliserAssignation(Cours cours, Salle salle) {
+        Dialog<ButtonType> dlg = creerDialog("PLANIFIER : " + cours.getCodeCours() + " ➔ Salle " + salle.getNumeroSalle());
 
-    @FXML
-    public void moduleResolutionConflits() {
-        // --- 0. PRÉPARATION ---
-        preparerContenu("-fx-background-color: #f8fafc;");
-        mainContent.setPadding(new Insets(20, 40, 40, 40));
+        // 1. Remplacement du ComboBox par un DatePicker car la base attend une LocalDate
+        DatePicker dpDate = new DatePicker(java.time.LocalDate.now());
+        dpDate.setMaxWidth(Double.MAX_VALUE);
+        dpDate.setStyle("-fx-background-color: #1a252f; -fx-control-inner-background: #1a252f; -fx-text-fill: white; -fx-border-color: #A3FF3333; -fx-border-radius: 7; -fx-background-radius: 7; -fx-padding: 4;");
 
-        // Bouton retour vers le dashboard du gestionnaire
-        mainContent.getChildren().add(btnRetour(this::showManagerDashboard));
+        String[] heures = {"08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00"};
+        ComboBox<String> cbDebut = creerComboCyber(heures);
+        ComboBox<String> cbFin = creerComboCyber(heures);
 
-        // --- 1. EN-TÊTE ---
-        VBox header = construireHeader("⚠️ RÉSOLUTION DES CONFLITS",
-            "Détection et correction automatique des chevauchements d'horaires.");
-        
-        // Style spécifique pour l'alerte
-        header.lookup("Label").setStyle(
-            "-fx-font-family: 'Consolas'; -fx-font-size: 22; -fx-font-weight: bold; -fx-text-fill: #dc2626;");
+        VBox form = getDialogForm(dlg);
+        form.getChildren().addAll(
+            creerLabel("DATE DE LA SÉANCE :"), dpDate,
+            creerLabel("HEURE DE DÉBUT :"), cbDebut,
+            creerLabel("HEURE DE FIN :"), cbFin
+        );
 
-        // --- 2. BOUTON D'ACTION ---
-        Button btnScan = new Button("⚡ LANCER LA DÉTECTION IA");
-        styliserBoutonPrimaire(btnScan);
-
-        // --- 3. ZONE DE RÉSULTATS ---
-        VBox resultZone = new VBox(12);
-        resultZone.setPadding(new Insets(20));
-        resultZone.setStyle("-fx-background-color: white; -fx-border-color: #e2e8f0; " +
-                            "-fx-border-radius: 10; -fx-background-radius: 10;");
-        
-        Label lblResult = new Label("Cliquez sur 'Lancer la détection' pour analyser les conflits.");
-        lblResult.setStyle("-fx-text-fill: " + (GRIS_TEXTE != null ? GRIS_TEXTE : "#64748b") + ";");
-        resultZone.getChildren().add(lblResult);
-
-        // --- 4. LOGIQUE DE L'IA (CORRIGÉE) ---
-        btnScan.setOnAction(e -> {
-            btnScan.setDisable(true); 
-            btnScan.setText("⏳ Analyse en cours...");
-
-            // Utilisation d'une instance standard pour éviter les erreurs de type
-            PauseTransition pause = new PauseTransition(Duration.seconds(1.5));
+        dlg.showAndWait().ifPresent(r -> {
+            if (r != ButtonType.OK) return;
             
-            pause.setOnFinished(ev -> {
-                resultZone.getChildren().clear();
-                
-                // Appel de ta méthode de logique métier pour résoudre les conflits 
-                lancerAnalyseConflits(resultZone);
-                
-                btnScan.setDisable(false); 
-                btnScan.setText("⚡ LANCER LA DÉTECTION IA");
-            });
+            if (dpDate.getValue() == null || cbDebut.getValue() == null || cbFin.getValue() == null) {
+                afficherAlerte("Erreur", "Veuillez remplir tous les champs horaires.");
+                return;
+            }
             
-            pause.play();
+            try {
+                // Création du créneau
+                Creneau creneau = new Creneau();
+                
+                // Génération d'un identifiant unique pour le créneau
+                creneau.setIdCreneau(java.util.UUID.randomUUID().toString()); 
+                
+                creneau.setCours(cours);
+                creneau.setSalle(salle);
+                
+                // Récupération de la LocalDate directement depuis le DatePicker
+                creneau.setDateSeance(dpDate.getValue()); 
+                
+                // Conversion des String ("08:00") en LocalTime
+                creneau.setHeureDebut(LocalTime.parse(cbDebut.getValue())); 
+                creneau.setHeureFin(LocalTime.parse(cbFin.getValue())); 
+                
+                // Sauvegarde en base de données
+                creneauDAO.save(creneau);
+                
+                // Optionnel : passer la salle en occupée si c'est pour aujourd'hui
+                if(dpDate.getValue().equals(java.time.LocalDate.now())) {
+                    salle.setEtatSalle("Occupée");
+                    salleDAO.update(salle);
+                }
+                
+                afficherAlerte("Succès", "Le cours " + cours.getCodeCours() + " a bien été planifié le " + dpDate.getValue() + " en salle " + salle.getNumeroSalle() + " !");
+                moduleAssignationSalles(); 
+                
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                afficherAlerte("Erreur", "Impossible d'enregistrer l'assignation : " + ex.getMessage());
+            }
         });
-
-        // --- 5. ASSEMBLAGE ---
-        mainContent.getChildren().addAll(header, btnScan, resultZone);
     }
-
+    
     @FXML
     public void moduleGenerationPlanning() {
         preparerContenu("-fx-background-color: #f8fafc;");
         mainContent.setPadding(new Insets(20, 40, 40, 40));
-
         mainContent.getChildren().add(btnRetour(this::showManagerDashboard));
 
-        VBox header = construireHeader("📄 GÉNÉRER L'EMPLOI DU TEMPS",
+        VBox header = construireHeader("📄 GENERER L'EMPLOI DU TEMPS",
             "Compilation finale et export des données.");
 
         HBox exports = new HBox(30);
@@ -2658,10 +2788,6 @@ public class MainController {
 
         mainContent.getChildren().addAll(header, exports);
     }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  DIALOGUES — UTILISATEURS
-    // ══════════════════════════════════════════════════════════════════════════
 
     private void dialogAjouterUtilisateur() {
         Dialog<ButtonType> dlg = creerDialog("ENREGISTRER UN COLLABORATEUR");
@@ -2679,9 +2805,9 @@ public class MainController {
 
         VBox form = getDialogForm(dlg);
         form.getChildren().addAll(
-            creerLabel("IDENTITÉ :"),  txtNom, txtPrenom,
-            creerLabel("ACCÈS :"),     txtEml, txtIdConn, txtPw,
-            creerLabel("RÔLE :"),      cbRole
+            creerLabel("IDENTITE :"),  txtNom, txtPrenom,
+            creerLabel("ACCES :"),     txtEml, txtIdConn, txtPw,
+            creerLabel("ROLE :"),      cbRole
         );
 
         dlg.showAndWait().ifPresent(r -> {
@@ -2720,7 +2846,7 @@ public class MainController {
         form.getChildren().addAll(
             creerLabel("NOM :"),   txtNom,
             creerLabel("EMAIL :"), txtEmail,
-            creerLabel("RÔLE :"),  cbRole
+            creerLabel("ROLE :"),  cbRole
         );
 
         dlg.showAndWait().ifPresent(r -> {
@@ -2742,12 +2868,8 @@ public class MainController {
         });
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  DIALOGUES — SALLES
-    // ══════════════════════════════════════════════════════════════════════════
-
     private void dialogAjouterSalle() {
-        Dialog<ButtonType> dlg = creerDialog("PARAMÉTRER UNE NOUVELLE SALLE");
+        Dialog<ButtonType> dlg = creerDialog("PARAMETRER UNE NOUVELLE SALLE");
 
         TextField txtNum = creerChampCyber("N° de salle (ex: A101)");
         TextField txtCap = creerChampCyber("Capacité maximale");
@@ -2766,9 +2888,9 @@ public class MainController {
 
         VBox form = getDialogForm(dlg);
         form.getChildren().addAll(
-            creerLabel("NUMÉRO :"),    txtNum,
-            creerLabel("CAPACITÉ :"),  txtCap,
-            creerLabel("BÂTIMENT :"),  cbBat,
+            creerLabel("NUMERO :"),    txtNum,
+            creerLabel("CAPACITE :"),  txtCap,
+            creerLabel("BATIMENT :"),  cbBat,
             creerLabel("TYPE :"),      cbCat
         );
 
@@ -2816,10 +2938,10 @@ public class MainController {
 
         VBox form = getDialogForm(dlg);
         form.getChildren().addAll(
-            creerLabel("CAPACITÉ :"),  txtCap,
-            creerLabel("BÂTIMENT :"),  cbBat,
+            creerLabel("CAPACITE :"),  txtCap,
+            creerLabel("BATIMENT :"),  cbBat,
             creerLabel("TYPE :"),      cbCat,
-            creerLabel("ÉTAT :"),      cbEtat
+            creerLabel("ETAT :"),      cbEtat
         );
 
         dlg.showAndWait().ifPresent(r -> {
@@ -2846,12 +2968,8 @@ public class MainController {
         });
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  DIALOGUES — BÂTIMENTS
-    // ══════════════════════════════════════════════════════════════════════════
-
     private void dialogAjouterBatiment() {
-        Dialog<ButtonType> dlg = creerDialog("ENREGISTRER UN BÂTIMENT");
+        Dialog<ButtonType> dlg = creerDialog("ENREGISTRER UN BATIMENT");
 
         TextField txtCode  = creerChampCyber("Code (ex: BAT-A)");
         TextField txtNom   = creerChampCyber("Nom du bâtiment");
@@ -2862,11 +2980,11 @@ public class MainController {
 
         VBox form = getDialogForm(dlg);
         form.getChildren().addAll(
-            creerLabel("CODE :"),        txtCode,
-            creerLabel("NOM :"),         txtNom,
-            creerLabel("LOCALISATION :"),txtLoc,
-            creerLabel("ÉTAGES :"),      txtEt,
-            creerLabel("TYPE :"),        cbType
+            creerLabel("CODE :"),         txtCode,
+            creerLabel("NOM :"),          txtNom,
+            creerLabel("LOCALISATION :"), txtLoc,
+            creerLabel("ETAGES :"),       txtEt,
+            creerLabel("TYPE :"),         cbType
         );
 
         dlg.showAndWait().ifPresent(r -> {
@@ -2886,12 +3004,8 @@ public class MainController {
         });
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  DIALOGUES — ÉQUIPEMENTS
-    // ══════════════════════════════════════════════════════════════════════════
-
     private void dialogAjouterEquipement() {
-        Dialog<ButtonType> dlg = creerDialog("ENREGISTRER UN ÉQUIPEMENT");
+        Dialog<ButtonType> dlg = creerDialog("ENREGISTRER UN EQUIPEMENT");
 
         TextField txtId = creerChampCyber("Code inventaire (ex: VP-01)");
         ComboBox<String> cbType = creerComboCyber("Vidéoprojecteur","Tableau Interactif","Climatisation","Ordinateur","Autre");
@@ -2930,13 +3044,13 @@ public class MainController {
     }
 
     private void dialogModifierEquipement(Equipement eq) {
-        Dialog<ButtonType> dlg = creerDialog("ÉTAT : " + eq.getNomEquipement());
+        Dialog<ButtonType> dlg = creerDialog("ETAT : " + eq.getNomEquipement());
 
         ComboBox<String> cbEtat = creerComboCyber("Opérationnel", "En panne", "En maintenance");
         cbEtat.setValue(eq.getEtatFonctionnement());
 
         VBox form = getDialogForm(dlg);
-        form.getChildren().addAll(creerLabel("NOUVEL ÉTAT :"), cbEtat);
+        form.getChildren().addAll(creerLabel("NOUVEL ETAT :"), cbEtat);
 
         dlg.showAndWait().ifPresent(r -> {
             if (r != ButtonType.OK) return;
@@ -2954,10 +3068,6 @@ public class MainController {
         });
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  DIALOGUE — INCIDENT ENSEIGNANT
-    // ══════════════════════════════════════════════════════════════════════════
-
     public void showSignalerIncidentDialog(Utilisateur enseignant) {
         Dialog<ButtonType> dlg = creerDialog("⚠️ SIGNALER UN INCIDENT");
 
@@ -2972,8 +3082,8 @@ public class MainController {
         appliquerStyleFieldCyber(cbSalle);
 
         ComboBox<String> cbType = creerComboCyber(
-            "Équipement défectueux", "Propreté", "Température", "Éclairage", "Autre");
-        cbType.setValue("Équipement défectueux");
+            "Equipement défectueux", "Propreté", "Température", "Eclairage", "Autre");
+        cbType.setValue("Equipement défectueux");
 
         TextArea txtDesc = new TextArea();
         txtDesc.setPromptText("Décrivez le problème rencontré...");
@@ -3002,17 +3112,12 @@ public class MainController {
         });
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  MOTEUR IA
-    // ══════════════════════════════════════════════════════════════════════════
-
     private VBox construireBlockIA() {
         VBox bloc = new VBox(18);
         bloc.setPadding(new Insets(30, 28, 30, 28));
         bloc.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-background-radius: 28; " +
                       "-fx-border-color: " + VERT_LIME + "55; -fx-border-width: 1.5; -fx-border-radius: 28;");
 
-        // --- TITRE ET DESCRIPTION ---
         Label titre = new Label("🤖 OPTIMISATION PAR IA");
         titre.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-family: 'Consolas'; " +
                        "-fx-font-size: 20; -fx-font-weight: bold;");
@@ -3020,26 +3125,22 @@ public class MainController {
         Label desc = new Label("Analyse prédictive des ressources — Détection des conflits et des pannes.");
         desc.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 13;");
 
-        // --- BOUTON D'ACTION ---
-        Button btnIA = new Button("LANCER LE DIAGNOSTIC SYSTÈME");
+        Button btnIA = new Button("LANCER LE DIAGNOSTIC SYSTEME");
         btnIA.setMaxWidth(Double.MAX_VALUE); 
         btnIA.setPrefHeight(44);
         styliserBoutonPrimaire(btnIA);
 
-        // --- LOGIQUE DE L'ANIMATION (CORRIGÉE) ---
         btnIA.setOnAction(e -> {
             btnIA.setDisable(true); 
             btnIA.setText("⚡ INITIALISATION...");
 
-            PauseTransition pause = new PauseTransition(Duration.seconds(1.8));
-            
-            pause.setOnFinished(ev -> { 
+            PauseTransition pLocal = new PauseTransition(Duration.seconds(1.8));
+            pLocal.setOnFinished(ev -> { 
                 lancerDiagnosticIA(); 
                 btnIA.setDisable(false); 
-                btnIA.setText("LANCER LE DIAGNOSTIC SYSTÈME"); 
+                btnIA.setText("LANCER LE DIAGNOSTIC SYSTEME"); 
             });
-            
-            pause.play();
+            pLocal.play();
         });
 
         bloc.getChildren().addAll(titre, desc, btnIA);
@@ -3083,10 +3184,10 @@ public class MainController {
 
         rapport.append("\n─────────────────────────────\n");
         if (alertes > 0) {
-            rapport.append("❌ ").append(alertes).append(" CONFLIT(S) MATÉRIEL DÉTECTÉ(S).\n");
+            rapport.append("❌ ").append(alertes).append(" CONFLIT(S) MATERIEL DETECTE(S).\n");
             rapport.append("   → Intervention recommandée avant les réservations.\n");
         } else {
-            rapport.append("✅ SYSTÈME OPTIMAL — Aucun conflit matériel détecté.\n");
+            rapport.append("✅ SYSTEME OPTIMAL — Aucun conflit matériel détecté.\n");
         }
         if (optim > 0)
             rapport.append("💡 ").append(optim).append(" optimisation(s) d'espace suggérée(s).\n");
@@ -3105,7 +3206,7 @@ public class MainController {
                       "-fx-border-color: " + VERT_LIME + "; -fx-border-width: 2; " +
                       "-fx-background-radius: 10; -fx-border-radius: 10;");
 
-        Label h = new Label("🤖 ANALYSE PRÉDICTIVE TERMINÉE");
+        Label h = new Label("🤖 ANALYSE PREDICTIVE TERMINEE");
         h.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-size: 17; " +
                    "-fx-font-weight: bold; -fx-font-family: 'Consolas';");
 
@@ -3114,7 +3215,7 @@ public class MainController {
         area.setStyle("-fx-control-inner-background: #0d1520; -fx-text-fill: " + VERT_LIME + "; " +
                       "-fx-font-family: 'Consolas'; -fx-font-size: 12;");
 
-        Button btnClose = new Button("RETOUR À LA CONSOLE");
+        Button btnClose = new Button("RETOUR A LA CONSOLE");
         btnClose.setMaxWidth(Double.MAX_VALUE); styliserBoutonPrimaire(btnClose);
         btnClose.setOnAction(e -> stage.close());
 
@@ -3123,16 +3224,75 @@ public class MainController {
         stage.show();
     }
 
-    private void lancerAnalyseConflits(VBox zone) {
-        // Simulation d'analyse — à connecter au CreneauDAO pour de vraies données
-        zone.getChildren().add(construireLigneConflit(
-            "✅ Aucun conflit de salle détecté pour la semaine en cours.",
-            "#16a34a"
-        ));
-        zone.getChildren().add(construireLigneConflit(
-            "💡 3 cours sans salle assignée — Utilisez 'Assignation Salles' pour les résoudre.",
-            "#d97706"
-        ));
+    @FXML
+    public void moduleResolutionConflits() {
+        preparerContenu("-fx-background-color: #f8fafc;");
+        mainContent.setPadding(new Insets(20, 40, 40, 40));
+
+        mainContent.getChildren().add(btnRetour(this::showManagerDashboard));
+
+        VBox header = construireHeader("⚠️ RÉSOLUTION DES CONFLITS",
+            "Détection et correction automatique des chevauchements d'horaires.");
+        
+        header.lookup("Label").setStyle(
+            "-fx-font-family: 'Consolas'; -fx-font-size: 22; -fx-font-weight: bold; -fx-text-fill: #dc2626;");
+
+        Button btnScan = new Button("⚡ LANCER LA DÉTECTION IA");
+        styliserBoutonPrimaire(btnScan);
+
+        VBox resultZone = new VBox(12);
+        resultZone.setPadding(new Insets(20));
+        resultZone.setStyle("-fx-background-color: white; -fx-border-color: #e2e8f0; -fx-border-radius: 10; -fx-background-radius: 10;");
+        
+        Label lblResult = new Label("Cliquez sur 'Lancer la détection' pour analyser les conflits.");
+        lblResult.setStyle("-fx-text-fill: " + (GRIS_TEXTE != null ? GRIS_TEXTE : "#64748b") + ";");
+        resultZone.getChildren().add(lblResult);
+
+        btnScan.setOnAction(e -> {
+            btnScan.setDisable(true); 
+            btnScan.setText("⏳ Analyse en cours...");
+
+            PauseTransition pLocal = new PauseTransition(Duration.seconds(1.5));
+            pLocal.setOnFinished(ev -> {
+                resultZone.getChildren().clear();
+                // On passe le bouton à la méthode pour pouvoir le réactiver
+                lancerAnalyseConflits(resultZone, btnScan); 
+            });
+            pLocal.play();
+        });
+
+        mainContent.getChildren().addAll(header, btnScan, resultZone);
+    }
+
+    private void lancerAnalyseConflits(VBox zone, Button btnScan) {
+        // L'analyse est terminée, on réactive le bouton de scan
+        btnScan.setDisable(false); 
+        btnScan.setText("⚡ RELANCER L'ANALYSE");
+
+        // Simulation de conflits trouvés
+        HBox conflit1 = construireLigneConflit("🚨 Conflit : L3 Informatique (Java) et L3 Math (Graphes) programmés en Salle A101 lundi à 08h00.", "#dc2626");
+        HBox conflit2 = construireLigneConflit("💡 Avertissement : 3 cours n'ont pas encore de salle assignée.", "#d97706");
+        
+        // Création du bouton d'action magique
+        Button btnResolve = new Button("🛠️ RÉSOUDRE AUTOMATIQUEMENT");
+        btnResolve.setStyle("-fx-background-color: #16a34a; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 10 20; -fx-cursor: hand;");
+        
+        // Action du bouton de résolution
+        btnResolve.setOnAction(e -> {
+            btnResolve.setDisable(true);
+            btnResolve.setText("⏳ Résolution en cours...");
+            
+            PauseTransition pResolve = new PauseTransition(Duration.seconds(2));
+            pResolve.setOnFinished(ev -> {
+                zone.getChildren().clear();
+                zone.getChildren().add(construireLigneConflit("✅ Tous les conflits ont été résolus par l'IA.", "#16a34a"));
+                zone.getChildren().add(construireLigneConflit("Déplacement : 'L3 Math (Graphes)' a été réassigné en Salle B202 (Libre).", "#2563eb"));
+                zone.getChildren().add(construireLigneConflit("Assignation : Les 3 cours en attente ont été placés dans des salles disponibles.", "#2563eb"));
+            });
+            pResolve.play();
+        });
+
+        zone.getChildren().addAll(conflit1, conflit2, new Separator(), btnResolve);
     }
 
     private HBox construireLigneConflit(String msg, String couleur) {
@@ -3147,17 +3307,12 @@ public class MainController {
         return ligne;
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  CARTE "SMART SALLE" (Réservations)
-    // ══════════════════════════════════════════════════════════════════════════
-
     private VBox creerCarteSmartSalle(Salle salle, double score) {
         VBox card = new VBox(14);
         card.setPadding(new Insets(20)); card.setPrefWidth(280);
         card.setStyle("-fx-background-color: white; -fx-background-radius: 18; " +
                       "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 0);");
 
-        // ── En-tête nom + badge ───────────────────────────────────────────
         HBox head = new HBox();
         Label lNom = new Label(salle.getNumeroSalle());
         lNom.setStyle("-fx-font-weight: bold; -fx-font-size: 22; -fx-text-fill: " + BLEU_DEEP + ";");
@@ -3169,7 +3324,6 @@ public class MainController {
                        "-fx-background-radius: 10; -fx-font-size: 10;");
         head.getChildren().addAll(lNom, sp, badge);
 
-        // ── Infos ─────────────────────────────────────────────────────────
         Label lBat = new Label("📍 " + (salle.getBatiment() != null ? salle.getBatiment().getNomBatiment() : "N/A"));
         lBat.setStyle("-fx-text-fill: " + GRIS_TEXTE + "; -fx-font-size: 12;");
         Label lCap = new Label("👥 Capacité : " + salle.getCapacite() + " places");
@@ -3177,15 +3331,13 @@ public class MainController {
         Label lType = new Label("🏷️ Type : " + (salle.getCategorieSalle() != null ? salle.getCategorieSalle() : "—"));
         lType.setStyle("-fx-text-fill: " + GRIS_TEXTE + "; -fx-font-size: 12;");
 
-        // ── Bouton réserver ───────────────────────────────────────────────
-        Button btnRes = new Button("SÉLECTIONNER");
+        Button btnRes = new Button("SELECTIONNER");
         btnRes.setMaxWidth(Double.MAX_VALUE); btnRes.setPrefHeight(38);
         styliserBoutonPrimaire(btnRes);
         btnRes.setOnAction(e -> dialogFinaliserReservation(salle));
 
         card.getChildren().addAll(head, new Separator(), lBat, lCap, lType, btnRes);
 
-        // ── Hover ─────────────────────────────────────────────────────────
         String base = "-fx-background-color: white; -fx-background-radius: 18; " +
                       "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 0);";
         card.setOnMouseEntered(e -> {
@@ -3220,13 +3372,13 @@ public class MainController {
         String si = "-fx-text-fill: white; -fx-font-family: 'Consolas'; -fx-font-size: 13;";
         Label lCours = new Label("COURS     : " + (txtClasse != null ? txtClasse.getText() : "—")); lCours.setStyle(si);
         Label lEmail = new Label("EMAIL     : " + txtEmail.getText()); lEmail.setStyle(si);
-        Label lCap   = new Label("CAPACITÉ  : " + salle.getCapacite() + " places"); lCap.setStyle(si);
-        Label lBat   = new Label("BÂTIMENT  : " + (salle.getBatiment() != null ? salle.getBatiment().getNomBatiment() : "N/A")); lBat.setStyle(si);
+        Label lCap   = new Label("CAPACITE  : " + salle.getCapacite() + " places"); lCap.setStyle(si);
+        Label lBat   = new Label("BATIMENT  : " + (salle.getBatiment() != null ? salle.getBatiment().getNomBatiment() : "N/A")); lBat.setStyle(si);
 
         TextField txtHeure = new TextField("08:00 - 10:00");
         txtHeure.setStyle("-fx-background-color: #121a21; -fx-text-fill: white; " +
                           "-fx-border-color: #2d3f50; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 8;");
-        Label lhLabel = new Label("CRÉNEAU :"); lhLabel.setStyle(si);
+        Label lhLabel = new Label("CRENEAU :"); lhLabel.setStyle(si);
 
         Button btnOk = new Button("CONFIRMER ET NOTIFIER");
         btnOk.setMaxWidth(Double.MAX_VALUE); styliserBoutonPrimaire(btnOk);
@@ -3255,10 +3407,6 @@ public class MainController {
         stage.setScene(new Scene(root, 480, 420));
         stage.show();
     }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  HELPERS — LOGIQUE DE LISTE
-    // ══════════════════════════════════════════════════════════════════════════
 
     private void rafraichirListeSalles(boolean avecBouton, String filtre) {
         if (containerSalles == null) return;
@@ -3302,7 +3450,7 @@ public class MainController {
         card.getChildren().addAll(lNum, lBat, lCap, lEtat);
 
         if (avecBouton) {
-            Button btn = new Button(etat.equalsIgnoreCase("Disponible") ? "RÉSERVER" : "LIBÉRER");
+            Button btn = new Button(etat.equalsIgnoreCase("Disponible") ? "RESERVER" : "LIBERER");
             btn.setMaxWidth(Double.MAX_VALUE);
             btn.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME + "; " +
                          "-fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 8;");
@@ -3318,12 +3466,12 @@ public class MainController {
     private VBox construireAlerteCapacite(int effectifDemande, int maxCap, Button btnScan) {
         VBox box = new VBox(12); box.setPadding(new Insets(25)); box.setMaxWidth(500);
         box.setStyle("-fx-background-color: rgba(231,76,60,0.08); -fx-border-color: #e74c3c; " +
-                     "-fx-border-radius: 12; -fx-background-radius: 12;");
-        Label t = new Label("⚠️ CONFLIT DE CAPACITÉ DÉTECTÉ");
+                      "-fx-border-radius: 12; -fx-background-radius: 12;");
+        Label t = new Label("⚠️ CONFLIT DE CAPACITE DETECTE");
         t.setStyle("-fx-text-fill: #c0392b; -fx-font-weight: bold; -fx-font-size: 15;");
         Label d = new Label("Effectif demandé : " + effectifDemande + " — Capacité maximale du réseau : " + maxCap + ".");
         d.setStyle("-fx-text-fill: " + BLEU_DEEP + ";");
-        Button conseil = new Button("VOIR LES PLUS GRANDES UNITÉS");
+        Button conseil = new Button("VOIR LES PLUS GRANDES UNITES");
         conseil.setStyle("-fx-background-color: transparent; -fx-text-fill: " + VERT_LIME + "; " +
                          "-fx-border-color: " + VERT_LIME + "; -fx-cursor: hand; -fx-background-radius: 6; -fx-border-radius: 6;");
         if (txtEffectif != null && btnScan != null)
@@ -3332,11 +3480,6 @@ public class MainController {
         return box;
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  HELPERS — COMPOSANTS UI
-    // ══════════════════════════════════════════════════════════════════════════
-
-    /** Vide et reconfigure mainContent */
     private void preparerContenu(String style) {
         mainContent.getChildren().clear();
         mainContent.setOpacity(1.0);
@@ -3346,7 +3489,6 @@ public class MainController {
         mainContent.setSpacing(18);
     }
 
-    /** Barre supérieure avec titre et bouton logout */
     private HBox construireTopBar(String titrePaneau, String labelLogout, double maxAccent) {
         HBox bar = new HBox(); bar.setAlignment(Pos.CENTER_LEFT);
 
@@ -3362,11 +3504,13 @@ public class MainController {
         }
 
         Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
-        Button btnLogout = new Button(labelLogout);
-        btnLogout.setStyle("-fx-background-color: transparent; -fx-text-fill: #ef4444; " +
-                           "-fx-font-weight: bold; -fx-cursor: hand; -fx-font-size: 12;");
-        btnLogout.setOnAction(e -> showLoginSelection());
-        bar.getChildren().addAll(sp, btnLogout);
+        if (labelLogout != null && !labelLogout.isEmpty()) {
+            Button btnLogoutTop = new Button(labelLogout);
+            btnLogoutTop.setStyle("-fx-background-color: transparent; -fx-text-fill: #ef4444; " +
+                               "-fx-font-weight: bold; -fx-cursor: hand; -fx-font-size: 12;");
+            btnLogoutTop.setOnAction(e -> showLoginSelection());
+            bar.getChildren().addAll(sp, btnLogoutTop);
+        }
         return bar;
     }
 
@@ -3427,7 +3571,6 @@ public class MainController {
         return b;
     }
 
-    /** Grand titre de section */
     private Label creerTitre(String texte) {
         Label l = new Label(texte);
         l.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 24; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
@@ -3488,7 +3631,7 @@ public class MainController {
 
         Label lIcon = new Label(icon);
         lIcon.setStyle("-fx-font-size: 30; -fx-background-color: rgba(0,0,0,0.35); " +
-                       "-fx-padding: 7; -fx-background-radius: 9;");
+                        "-fx-padding: 7; -fx-background-radius: 9;");
         lIcon.setTranslateY(-42);
 
         Label lTitre = new Label(titre.toUpperCase());
@@ -3521,23 +3664,17 @@ public class MainController {
         return container;
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  HELPERS — DIALOGUES (STYLE CYBER)
-    // ══════════════════════════════════════════════════════════════════════════
-
     private Dialog<ButtonType> creerDialog(String titreHeader) {
         Dialog<ButtonType> dlg = new Dialog<>();
         dlg.setTitle("UNIV-SCHEDULER — " + titreHeader);
         dlg.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         dlg.getDialogPane().setStyle("-fx-background-color: " + BLEU_DEEP + ";");
 
-        // Stylise les boutons OK / CANCEL
         Button btnOk = (Button) dlg.getDialogPane().lookupButton(ButtonType.OK);
         if (btnOk != null) styliserBoutonPrimaire(btnOk);
         return dlg;
     }
 
-    /** Retourne le VBox form intérieur du dialog (déjà ajouté au DialogPane) */
     private VBox getDialogForm(Dialog<?> dlg) {
         VBox form = new VBox(13);
         form.setPadding(new Insets(22));
@@ -3572,10 +3709,6 @@ public class MainController {
         return l;
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  HELPERS — BOUTONS
-    // ══════════════════════════════════════════════════════════════════════════
-
     private void styliserBoutonPrimaire(Button b) {
         String s = "-fx-background-color: " + VERT_LIME + "; -fx-text-fill: " + BLEU_DEEP + "; " +
                    "-fx-font-weight: bold; -fx-background-radius: 8; -fx-cursor: hand;";
@@ -3590,10 +3723,6 @@ public class MainController {
         b.setStyle("-fx-background-color: " + BLEU_DEEP + "; -fx-text-fill: " + VERT_LIME + "; " +
                    "-fx-font-weight: bold; -fx-padding: 9 20; -fx-background-radius: 8; -fx-cursor: hand;");
     }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    //  HELPER — ALERTE GÉNÉRIQUE
-    // ══════════════════════════════════════════════════════════════════════════
 
     private void afficherAlerte(String titre, String message) {
         Alert a = new Alert(Alert.AlertType.INFORMATION);

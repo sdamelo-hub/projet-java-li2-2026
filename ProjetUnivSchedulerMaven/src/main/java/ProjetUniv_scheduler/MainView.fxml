@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="ProjetUniv_scheduler.MainController"
+            prefHeight="750.0" prefWidth="1200.0"
+            style="-fx-background-color: #FFFFFF;">
+
+    <left>
+        <VBox fx:id="sidebar" spacing="4"
+              style="-fx-background-color: #1E2732; -fx-min-width: 250; -fx-padding: 24 20 20 20;">
+
+            <Label text="UNIV-SCHEDULER"
+                   style="-fx-text-fill: #A3FF33; -fx-font-family: 'Consolas'; -fx-font-size: 18;
+                          -fx-font-weight: bold; -fx-padding: 0 0 16 0;"/>
+
+            <Separator style="-fx-opacity: 0.3; -fx-background-color: #A3FF33;"/>
+            <Region prefHeight="8"/>
+
+            <!-- ADMIN UNIQUEMENT -->
+            <Button fx:id="btnAdministration"
+                    text="⚙️  Administration"
+                    onAction="#showAdminPanel"
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33;
+                           -fx-alignment: CENTER_LEFT; -fx-cursor: hand;
+                           -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 12;"
+                    maxWidth="Infinity" prefHeight="42"/>
+
+            <Button fx:id="btnUtilisateurs"
+                    text="👤  Utilisateurs"
+                    onAction="#showUserManagement"
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33;
+                           -fx-alignment: CENTER_LEFT; -fx-cursor: hand;
+                           -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 12;"
+                    maxWidth="Infinity" prefHeight="42"/>
+
+            <Button fx:id="btnNotifications"
+                    text="🔔  Notifications"
+                    onAction="#showNotifications"
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33;
+                           -fx-alignment: CENTER_LEFT; -fx-cursor: hand;
+                           -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 12;"
+                    maxWidth="Infinity" prefHeight="42"/>
+
+            <!-- GESTIONNAIRE UNIQUEMENT -->
+            <Button fx:id="btnPlanification"
+                    text="📅  Planification"
+                    onAction="#showManagerDashboard"
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33;
+                           -fx-alignment: CENTER_LEFT; -fx-cursor: hand;
+                           -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 12;"
+                    maxWidth="Infinity" prefHeight="42"/>
+
+            <!-- ENSEIGNANT + ADMIN -->
+            <Button fx:id="btnSalles"
+                    text="🏫  Etat des Salles"
+                    onAction="#showSalles"
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33;
+                           -fx-alignment: CENTER_LEFT; -fx-cursor: hand;
+                           -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 12;"
+                    maxWidth="Infinity" prefHeight="42"/>
+
+            <Button fx:id="btnReservations"
+                    text="⚡  Reservations"
+                    onAction="#showReservations"
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33;
+                           -fx-alignment: CENTER_LEFT; -fx-cursor: hand;
+                           -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 12;"
+                    maxWidth="Infinity" prefHeight="42"/>
+
+            <Button fx:id="btnMesCreneaux"
+                    text="📋  Mes Creneaux"
+                    onAction="#showMesCreneaux"
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33;
+                           -fx-alignment: CENTER_LEFT; -fx-cursor: hand;
+                           -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 12;"
+                    maxWidth="Infinity" prefHeight="42"/>
+
+            <!-- ETUDIANT UNIQUEMENT -->
+            <Button fx:id="btnEdt"
+                    text="📆  Mon EDT"
+                    onAction="#showMonEdt"
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33;
+                           -fx-alignment: CENTER_LEFT; -fx-cursor: hand;
+                           -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 12;"
+                    maxWidth="Infinity" prefHeight="42"/>
+
+            <Button fx:id="btnRechercheSalle"
+                    text="🔍  Trouver Salle"
+                    onAction="#showRechercheSalle"
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33;
+                           -fx-alignment: CENTER_LEFT; -fx-cursor: hand;
+                           -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 12;"
+                    maxWidth="Infinity" prefHeight="42"/>
+
+            <Button fx:id="btnMonProfil"
+                    text="👤  Mon Profil"
+                    onAction="#showMonProfil"
+                    style="-fx-background-color: transparent; -fx-text-fill: #A3FF33;
+                           -fx-alignment: CENTER_LEFT; -fx-cursor: hand;
+                           -fx-font-size: 13; -fx-font-weight: bold; -fx-padding: 10 12;"
+                    maxWidth="Infinity" prefHeight="42"/>
+
+            <Region VBox.vgrow="ALWAYS"/>
+
+            <Separator style="-fx-opacity: 0.2; -fx-background-color: #A3FF33;"/>
+
+            <Button fx:id="btnLogout"
+                    text="⏻  DECONNEXION"
+                    onAction="#handleLogout"
+                    style="-fx-background-color: transparent; -fx-text-fill: #ef4444;
+                           -fx-border-color: #ef4444; -fx-border-radius: 6;
+                           -fx-alignment: CENTER; -fx-cursor: hand;
+                           -fx-font-size: 12; -fx-font-weight: bold;"
+                    maxWidth="Infinity" prefHeight="38">
+                <VBox.margin><Insets top="6" bottom="6"/></VBox.margin>
+            </Button>
+
+            <Label text="© 2026 UIDT Cyber-System"
+                   style="-fx-text-fill: #A3FF33; -fx-font-size: 9; -fx-opacity: 0.5;"/>
+        </VBox>
+    </left>
+
+    <center>
+        <ScrollPane fitToWidth="true"
+                    style="-fx-background-color: transparent; -fx-background: #FFFFFF;
+                           -fx-border-color: transparent;">
+            <VBox fx:id="mainContent" spacing="22"
+                  style="-fx-background-color: #FFFFFF;">
+                <padding><Insets top="36" right="36" bottom="36" left="36"/></padding>
+            </VBox>
+        </ScrollPane>
+    </center>
+</BorderPane>

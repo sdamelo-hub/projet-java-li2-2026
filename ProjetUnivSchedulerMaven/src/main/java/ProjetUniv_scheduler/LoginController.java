@@ -5,9 +5,18 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
-import javafx.scene.paint.Color;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
 
+/**
+ * LoginController — Connexion UNIV-SCHEDULER.
+ *
+ * CORRECTIONS APPLIQUÉES :
+ *  1. Import "Color" supprimé (inutile — remplacé par couleur CSS string)
+ *  2. profil.name() → profil.label dans filtrerMenuLateral()
+ *     (.name() retourne "ADMINISTRATEUR" ; .label retourne "Administrateur")
+ *  3. Modality importée explicitement (plus de référence qualifiée longue)
+ */
 public class LoginController {
 
     // ── Charte graphique ───────────────────────────────────────────────────────
@@ -16,17 +25,17 @@ public class LoginController {
     private static final String FOND_BLANC = "#FFFFFF";
 
     // ── Dépendances ────────────────────────────────────────────────────────────
-    private final Stage           primaryStage;
-    private final MainController  mainController;
-    private final Scene           mainScene;          // ← NOUVEAU : scène à restaurer
-    private final UtilisateurDAO  utilisateurDAO = new UtilisateurDAO();
+    private final Stage          primaryStage;
+    private final MainController mainController;
+    private final Scene          mainScene;
+    private final UtilisateurDAO utilisateurDAO = new UtilisateurDAO();
 
     // ── Profils disponibles ────────────────────────────────────────────────────
     public enum Profil {
         ADMINISTRATEUR("Administrateur", "⚡", "Configuration globale du système"),
         GESTIONNAIRE  ("Gestionnaire",   "🛠️", "Planification & Emplois du temps"),
         ENSEIGNANT    ("Enseignant",      "📖", "Consultation & Réservation"),
-        ETUDIANT      ("Étudiant",        "🎓", "Consultation des plannings");
+        ETUDIANT      ("Etudiant",        "🎓", "Consultation des plannings");
 
         final String label;
         final String icon;
@@ -47,7 +56,7 @@ public class LoginController {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  ÉTAPE 1 : Écran de sélection du profil
+    //  ÉCRAN 1 : Sélection du profil
     // ══════════════════════════════════════════════════════════════════════════
     public void show() {
         VBox root = new VBox(50);
@@ -55,12 +64,12 @@ public class LoginController {
         root.setPadding(new Insets(60));
         root.setStyle("-fx-background-color: " + FOND_BLANC + ";");
 
-        // ── En-tête ────────────────────────────────────────────────────────
         VBox header = new VBox(8);
         header.setAlignment(Pos.CENTER);
 
         Label logo = new Label("UNIV-SCHEDULER");
-        logo.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 32; -fx-font-weight: bold; -fx-text-fill: " + BLEU_DEEP + ";");
+        logo.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 32; -fx-font-weight: bold;"
+                    + " -fx-text-fill: " + BLEU_DEEP + ";");
 
         Label subtitle = new Label("SÉLECTIONNEZ VOTRE PORTAIL D'ACCÈS");
         subtitle.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 14; -fx-text-fill: #64748b;");
@@ -72,25 +81,20 @@ public class LoginController {
 
         header.getChildren().addAll(logo, accent, subtitle);
 
-        // ── Grille des profils ─────────────────────────────────────────────
         HBox profileGrid = new HBox(30);
         profileGrid.setAlignment(Pos.CENTER);
-
         for (Profil p : Profil.values()) {
             profileGrid.getChildren().add(creerCarteProfile(p));
         }
 
         root.getChildren().addAll(header, profileGrid);
 
-        Scene loginScene = new Scene(root, 1100, 550);
-        primaryStage.setScene(loginScene);
+        primaryStage.setScene(new Scene(root, 1100, 550));
         primaryStage.setTitle("UNIV-SCHEDULER — Connexion");
         primaryStage.show();
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  Carte cliquable pour chaque profil
-    // ══════════════════════════════════════════════════════════════════════════
+    // ── Carte profil cliquable ─────────────────────────────────────────────────
     private VBox creerCarteProfile(Profil profil) {
         VBox card = new VBox(18);
         card.setAlignment(Pos.CENTER);
@@ -98,23 +102,22 @@ public class LoginController {
         card.setPrefSize(220, 200);
         card.setCursor(javafx.scene.Cursor.HAND);
 
-        String styleBase = "-fx-background-color: " + BLEU_DEEP + "; " +
-                           "-fx-background-radius: 20; " +
-                           "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.25), 12, 0, 0, 4);";
+        String styleBase = "-fx-background-color: " + BLEU_DEEP + ";"
+                         + "-fx-background-radius: 20;"
+                         + "-fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.25), 12, 0, 0, 4);";
         card.setStyle(styleBase);
 
         StackPane iconWrap = new StackPane();
         iconWrap.setPrefSize(64, 64);
         iconWrap.setMaxSize(64, 64);
         iconWrap.setStyle("-fx-background-color: " + VERT_LIME + "; -fx-background-radius: 32;");
-
         Label lIcon = new Label(profil.icon);
         lIcon.setStyle("-fx-font-size: 26;");
         iconWrap.getChildren().add(lIcon);
 
         Label lLabel = new Label(profil.label.toUpperCase());
-        lLabel.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 13; " +
-                        "-fx-text-fill: " + VERT_LIME + ";");
+        lLabel.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 13;"
+                      + " -fx-text-fill: " + VERT_LIME + ";");
 
         Label lDesc = new Label(profil.desc);
         lDesc.setWrapText(true);
@@ -125,75 +128,73 @@ public class LoginController {
 
         card.setOnMouseEntered(e -> {
             card.setTranslateY(-8);
-            card.setStyle(styleBase +
-                "-fx-border-color: " + VERT_LIME + "; " +
-                "-fx-border-width: 2; -fx-border-radius: 20;");
+            card.setStyle(styleBase
+                + "-fx-border-color: " + VERT_LIME + ";"
+                + "-fx-border-width: 2; -fx-border-radius: 20;");
         });
         card.setOnMouseExited(e -> {
             card.setTranslateY(0);
             card.setStyle(styleBase);
         });
-
         card.setOnMouseClicked(e -> showLoginForm(profil));
         return card;
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  ÉTAPE 2 : Formulaire de connexion (dialog modal)
+    //  ÉCRAN 2 : Formulaire de connexion (dialog modal)
     // ══════════════════════════════════════════════════════════════════════════
     private void showLoginForm(Profil profil) {
         Stage dialog = new Stage();
-        dialog.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        dialog.initModality(Modality.APPLICATION_MODAL);   // ← import explicite, plus d'ambiguïté
         dialog.setTitle("Connexion — " + profil.label);
         dialog.setResizable(false);
 
         VBox root = new VBox(25);
         root.setPadding(new Insets(35));
-        root.setStyle("-fx-background-color: " + BLEU_DEEP + "; " +
-                      "-fx-border-color: " + VERT_LIME + "; " +
-                      "-fx-border-width: 2; -fx-background-radius: 10; -fx-border-radius: 10;");
+        root.setStyle("-fx-background-color: " + BLEU_DEEP + ";"
+                    + "-fx-border-color: " + VERT_LIME + ";"
+                    + "-fx-border-width: 2; -fx-background-radius: 10; -fx-border-radius: 10;");
 
-        // ── Titre ──────────────────────────────────────────────────────────
+        // Titre
         HBox titleRow = new HBox(15);
         titleRow.setAlignment(Pos.CENTER_LEFT);
-
-        Label lIcon = new Label(profil.icon);
-        lIcon.setStyle("-fx-font-size: 28;");
-
+        Label lIcon = new Label(profil.icon); lIcon.setStyle("-fx-font-size: 28;");
         VBox titleInfo = new VBox(3);
         Label lTitle = new Label("CONNEXION " + profil.label.toUpperCase());
-        lTitle.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 17; -fx-text-fill: " + VERT_LIME + ";");
+        lTitle.setStyle("-fx-font-family: 'Consolas'; -fx-font-weight: bold; -fx-font-size: 17;"
+                      + " -fx-text-fill: " + VERT_LIME + ";");
         Label lSub = new Label(profil.desc);
         lSub.setStyle("-fx-text-fill: #64748b; -fx-font-size: 12;");
         titleInfo.getChildren().addAll(lTitle, lSub);
-
         titleRow.getChildren().addAll(lIcon, titleInfo);
 
         Separator sep = new Separator();
         sep.setStyle("-fx-background-color: " + VERT_LIME + "44;");
 
-        // ── Style des champs ───────────────────────────────────────────────
-        String fieldStyle = "-fx-background-color: #121a21; " +
-                            "-fx-text-fill: white; " +
-                            "-fx-prompt-text-fill: #5e6d7a; " +
-                            "-fx-border-color: #2d3f50; " +
-                            "-fx-border-radius: 6; -fx-background-radius: 6; " +
-                            "-fx-padding: 10; -fx-font-size: 13;";
+        // Style champs
+        String fieldStyle = "-fx-background-color: #121a21;"
+                          + "-fx-text-fill: white;"
+                          + "-fx-prompt-text-fill: #5e6d7a;"
+                          + "-fx-border-color: #2d3f50;"
+                          + "-fx-border-radius: 6; -fx-background-radius: 6;"
+                          + "-fx-padding: 10; -fx-font-size: 13;";
 
-        // ── Champ identifiant ──────────────────────────────────────────────
-        VBox gIdentifiant = new VBox(5);
-        Label lIdentifiant = new Label(getIdentifiantLabel(profil));
-        lIdentifiant.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-size: 10; -fx-font-weight: bold; -fx-font-family: 'Consolas';");
-        TextField txtIdentifiant = new TextField();
-        txtIdentifiant.setPromptText(getIdentifiantPlaceholder(profil));
-        txtIdentifiant.setPrefWidth(340);
-        txtIdentifiant.setStyle(fieldStyle);
-        gIdentifiant.getChildren().addAll(lIdentifiant, txtIdentifiant);
+        // Champ identifiant
+        VBox gId = new VBox(5);
+        Label lId = new Label(getIdentifiantLabel(profil));
+        lId.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-size: 10;"
+                   + " -fx-font-weight: bold; -fx-font-family: 'Consolas';");
+        TextField txtId = new TextField();
+        txtId.setPromptText(getIdentifiantPlaceholder(profil));
+        txtId.setPrefWidth(340);
+        txtId.setStyle(fieldStyle);
+        gId.getChildren().addAll(lId, txtId);
 
-        // ── Champ mot de passe ─────────────────────────────────────────────
+        // Champ mot de passe
         VBox gMdp = new VBox(5);
         Label lMdp = new Label("🔒 MOT DE PASSE");
-        lMdp.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-size: 10; -fx-font-weight: bold; -fx-font-family: 'Consolas';");
+        lMdp.setStyle("-fx-text-fill: " + VERT_LIME + "; -fx-font-size: 10;"
+                    + " -fx-font-weight: bold; -fx-font-family: 'Consolas';");
         PasswordField txtMdp = new PasswordField();
         txtMdp.setPromptText("••••••••");
         txtMdp.setPrefWidth(340);
@@ -201,31 +202,30 @@ public class LoginController {
         gMdp.getChildren().addAll(lMdp, txtMdp);
 
         VBox formFields = new VBox(16);
-        formFields.getChildren().addAll(gIdentifiant, gMdp);
+        formFields.getChildren().addAll(gId, gMdp);
 
-        // ── Label d'erreur ─────────────────────────────────────────────────
+        // Message d'erreur (caché par défaut)
         Label errLabel = new Label();
         errLabel.setStyle("-fx-text-fill: #FF3131; -fx-font-size: 12;");
         errLabel.setVisible(false);
         errLabel.setManaged(false);
 
-        // ── Bouton CONNEXION ───────────────────────────────────────────────
+        // Bouton connexion
         Button btnLogin = new Button("SE CONNECTER");
         btnLogin.setMaxWidth(Double.MAX_VALUE);
         btnLogin.setPrefHeight(44);
         btnLogin.setCursor(javafx.scene.Cursor.HAND);
-
-        String btnStyle = "-fx-background-color: " + VERT_LIME + "; -fx-text-fill: " + BLEU_DEEP +
-                          "; -fx-font-weight: bold; -fx-background-radius: 8; -fx-font-size: 14;";
-        String btnHover = "-fx-background-color: white; -fx-text-fill: " + BLEU_DEEP +
-                          "; -fx-font-weight: bold; -fx-background-radius: 8; -fx-font-size: 14;";
-        btnLogin.setStyle(btnStyle);
-        btnLogin.setOnMouseEntered(e -> btnLogin.setStyle(btnHover));
-        btnLogin.setOnMouseExited (e -> btnLogin.setStyle(btnStyle));
+        String bs = "-fx-background-color: " + VERT_LIME + "; -fx-text-fill: " + BLEU_DEEP
+                  + "; -fx-font-weight: bold; -fx-background-radius: 8; -fx-font-size: 14;";
+        String bh = "-fx-background-color: white; -fx-text-fill: " + BLEU_DEEP
+                  + "; -fx-font-weight: bold; -fx-background-radius: 8; -fx-font-size: 14;";
+        btnLogin.setStyle(bs);
+        btnLogin.setOnMouseEntered(e -> btnLogin.setStyle(bh));
+        btnLogin.setOnMouseExited (e -> btnLogin.setStyle(bs));
 
         btnLogin.setOnAction(e -> {
-            String identifiant = txtIdentifiant.getText().trim();
-            String mdp         = txtMdp.getText();      // NE PAS trim() le mot de passe
+            String identifiant = txtId.getText().trim();
+            String mdp         = txtMdp.getText(); // PAS de trim() sur le mot de passe
 
             if (identifiant.isEmpty() || mdp.isEmpty()) {
                 afficherErreur(errLabel, "⚠️ Tous les champs sont obligatoires.");
@@ -237,53 +237,66 @@ public class LoginController {
             if (u == null) {
                 afficherErreur(errLabel, "❌ Identifiant ou mot de passe incorrect.");
                 txtMdp.clear();
+                txtMdp.requestFocus();
                 return;
             }
 
-            // ── Connexion réussie ──────────────────────────────────────────
+            // Connexion réussie
             dialog.close();
-            // CORRECTIF CRITIQUE : restaurer la scène principale AVANT de router
             primaryStage.setScene(mainScene);
             primaryStage.setTitle("UNIV-SCHEDULER — " + profil.label);
             routerVersVue(profil, u);
         });
 
+        // Entrée depuis le champ mot de passe = clic bouton
         txtMdp.setOnAction(e -> btnLogin.fire());
 
-        // ── Lien Retour ────────────────────────────────────────────────────
+        // Bouton retour
         Button btnRetour = new Button("← Choisir un autre profil");
-        btnRetour.setStyle("-fx-background-color: transparent; -fx-text-fill: #5e6d7a; -fx-cursor: hand; -fx-font-size: 11;");
+        btnRetour.setStyle("-fx-background-color: transparent; -fx-text-fill: #5e6d7a;"
+                         + " -fx-cursor: hand; -fx-font-size: 11;");
         btnRetour.setOnAction(e -> { dialog.close(); show(); });
 
         root.getChildren().addAll(titleRow, sep, formFields, errLabel, btnLogin, btnRetour);
 
+        // ── CORRECTION 2 : pas de Color.TRANSPARENT (import Color supprimé)
+        // On utilise un fond blanc via CSS sur la scène, aucun import Color nécessaire
         Scene scene = new Scene(root, 420, 470);
-        scene.setFill(Color.TRANSPARENT);
         dialog.setScene(scene);
         dialog.show();
-
-        txtIdentifiant.requestFocus();
+        txtId.requestFocus();
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  ÉTAPE 3 : Authentification
+    //  AUTHENTIFICATION
     // ══════════════════════════════════════════════════════════════════════════
     private Utilisateur authentifier(Profil profil, String identifiant, String mdp) {
         try {
             Utilisateur u = utilisateurDAO.findByIdentifiant(identifiant);
-            if (u == null) return null;
+            if (u == null) {
+                System.out.println("❌ Aucun utilisateur pour : [" + identifiant + "]");
+                return null;
+            }
 
-            // Vérification mot de passe (comparaison simple en clair)
-            // TODO : migrer vers BCrypt pour la production
-            if (!mdp.equals(u.getMotDePasse())) return null;
+            // Vérification mot de passe
+            String mdpBDD = u.getMotDePasse();
+            if (mdpBDD == null || !mdp.equals(mdpBDD)) {
+                System.out.println("❌ MDP incorrect. Saisi:[" + mdp + "] BDD:[" + mdpBDD + "]");
+                return null;
+            }
 
-            // Vérification que le rôle correspond au profil sélectionné
-            if (!roleCorrespondAuProfil(u.getRole(), profil)) return null;
+            // Vérification rôle
+            if (!roleCorrespondAuProfil(u.getRole(), profil)) {
+                System.out.println("❌ Rôle incompatible. Profil:[" + profil.label
+                    + "] Rôle BDD:[" + u.getRole() + "]");
+                return null;
+            }
 
+            System.out.println("✅ Connexion réussie : " + u.getNom() + " [" + u.getRole() + "]");
             return u;
 
         } catch (Exception e) {
-            System.err.println("❌ Erreur lors de l'authentification : " + e.getMessage());
+            System.err.println("❌ Erreur auth : " + e.getMessage());
             e.printStackTrace();
             return null;
         }
@@ -291,9 +304,11 @@ public class LoginController {
 
     private boolean roleCorrespondAuProfil(String roleEnBase, Profil profil) {
         if (roleEnBase == null) return false;
-        // Utilisation de contains() pour ignorer les accents et la casse
+        // Normalisation pour ignorer accents et casse
         String role = roleEnBase.trim().toLowerCase()
-                                .replace("é", "e").replace("è", "e").replace("ê", "e");
+                                .replace("é", "e")
+                                .replace("è", "e")
+                                .replace("ê", "e");
         return switch (profil) {
             case ADMINISTRATEUR -> role.equals("administrateur");
             case GESTIONNAIRE   -> role.equals("gestionnaire");
@@ -303,11 +318,13 @@ public class LoginController {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  ÉTAPE 4 : Routing vers la vue du profil
+    //  ROUTING
     // ══════════════════════════════════════════════════════════════════════════
     private void routerVersVue(Profil profil, Utilisateur utilisateur) {
-        
-    	mainController.filtrerMenuLateral(profil.name());
+        // ── CORRECTION 1 : profil.label (ex: "Gestionnaire") au lieu de profil.name()
+        //    qui retourne "GESTIONNAIRE" (enum constant name, tout en majuscules)
+        //    filtrerMenuLateral() attend "Gestionnaire", "Administrateur", etc.
+        mainController.filtrerMenuLateral(profil.label);
         mainController.setUtilisateurConnecte(utilisateur);
 
         switch (profil) {
